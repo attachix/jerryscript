@@ -15,7 +15,7 @@
 
 #include "config.h"
 #include "jerryscript.h"
-#include "test-common.h"
+#include "../test-common.h"
 
 static bool test_context_data1_new_called = false;
 static bool test_context_data2_new_called = false;

@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-#include "test-common.h"
+#include "../unit-core/test-common.h"
 
 #define TEST_MAX_DEPTH 10
 #define TEST_ITERATIONS_NUM 256

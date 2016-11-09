@@ -15,8 +15,9 @@
 
 #include "ecma-globals.h"
 #include "ecma-helpers.h"
+#include "jerryscript.h"
 
-#include "test-common.h"
+#include "../test-common.h"
 
 /**
  * Unit test's main function.
@@ -26,19 +27,26 @@ main (void)
 {
   TEST_INIT ();
 
-  const lit_utf8_byte_t *strings[] =
+  const jerry_char_t *strings[] =
   {
-    (const lit_utf8_byte_t *) "1",
-    (const lit_utf8_byte_t *) "0.5",
-    (const lit_utf8_byte_t *) "12345",
-    (const lit_utf8_byte_t *) "12345.123",
-    (const lit_utf8_byte_t *) "1e-45",
-    (const lit_utf8_byte_t *) "-2.5e+38",
-    (const lit_utf8_byte_t *) "NaN",
-    (const lit_utf8_byte_t *) "Infinity",
-    (const lit_utf8_byte_t *) "-Infinity",
-    (const lit_utf8_byte_t *) "0",
-    (const lit_utf8_byte_t *) "0",
+    (const jerry_char_t *) "1",
+    (const jerry_char_t *) "0.5",
+    (const jerry_char_t *) "12345",
+    (const jerry_char_t *) "1e-45",
+    (const jerry_char_t *) "-2.5e+38",
+    (const jerry_char_t *) "-2.5e38",
+    (const jerry_char_t *) "- 2.5e+38",
+    (const jerry_char_t *) "-2 .5e+38",
+    (const jerry_char_t *) "-2. 5e+38",
+    (const jerry_char_t *) "-2.5e+ 38",
+    (const jerry_char_t *) "-2.5 e+38",
+    (const jerry_char_t *) "-2.5e +38",
+    (const jerry_char_t *) "NaN",
+    (const jerry_char_t *) "abc",
+    (const jerry_char_t *) "   Infinity  ",
+    (const jerry_char_t *) "-Infinity",
+    (const jerry_char_t *) "0",
+    (const jerry_char_t *) "0",
   };
 
   const ecma_number_t nums[] =
@@ -46,9 +54,16 @@ main (void)
     (ecma_number_t) 1.0,
     (ecma_number_t) 0.5,
     (ecma_number_t) 12345.0,
-    (ecma_number_t) 12345.123,
     (ecma_number_t) 1.0e-45,
     (ecma_number_t) -2.5e+38,
+    (ecma_number_t) -2.5e+38,
+    (ecma_number_t) NAN,
+    (ecma_number_t) NAN,
+    (ecma_number_t) NAN,
+    (ecma_number_t) NAN,
+    (ecma_number_t) NAN,
+    (ecma_number_t) NAN,
+    (ecma_number_t) NAN,
     (ecma_number_t) NAN,
     (ecma_number_t) INFINITY,
     (ecma_number_t) -INFINITY,
@@ -60,11 +75,11 @@ main (void)
        i < sizeof (nums) / sizeof (nums[0]);
        i++)
   {
-    lit_utf8_byte_t str[64];
+    ecma_number_t num = ecma_utf8_string_to_number (strings[i], lit_zt_utf8_string_size (strings[i]));
 
-    lit_utf8_size_t str_size = ecma_number_to_utf8_string (nums[i], str, sizeof (str));
-
-    if (strncmp ((char *) str, (char *) strings[i], str_size) != 0)
+    if (num != nums[i]
+        && (!ecma_number_is_nan (num)
+            || !ecma_number_is_nan (nums[i])))
     {
       return 1;
     }

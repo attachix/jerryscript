@@ -22,7 +22,7 @@
 #define JMEM_ALLOCATOR_INTERNAL
 #include "jmem-allocator-internal.h"
 
-#include "test-common.h"
+#include "../test-common.h"
 
 /* Heap size is 32K. */
 #define test_heap_size (32 * 1024)

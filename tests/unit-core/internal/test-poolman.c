@@ -26,7 +26,7 @@
 #define JMEM_ALLOCATOR_INTERNAL
 #include "jmem-allocator-internal.h"
 
-#include "test-common.h"
+#include "../test-common.h"
 
 /* Iterations count. */
 const uint32_t test_iters = 1024;

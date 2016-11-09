@@ -26,6 +26,15 @@ matrix:
     - os: osx
       env: OPTS="--jerry-tests --jerry-test-suite --unittests"
     - os: linux
+      services:
+        - docker
+      env: OPTS="--emx-unittests"
+      before_install:
+        - docker build . -t jerryscript
+        - docker build emscripten-simulated-jerry-api -t jerryscript-emx
+      script:
+        - docker run jerryscript-emx bash -c "source /root/emsdk/emsdk_env.sh && /jerryscript/tools/run-tests.py --emx-unittests"
+    - os: linux
       before_install:
         - tools/apt-get-install-deps.sh
         - echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
@@ -58,6 +67,7 @@ matrix:
       env: OPTS="--jerry-tests --jerry-test-suite --skip-list=parser-oom.js --buildoptions=--compile-flag=-fsanitize=undefined,--compile-flag=-m32,--compile-flag=-fno-omit-frame-pointer,--compile-flag=-fno-common,--debug,--jerry-libc=off,--static-link=off,--system-allocator=on,--linker-flag=-fuse-ld=gold" UBSAN_OPTIONS=print_stacktrace=1 TIMEOUT=600
   allow_failures:
     - env: OPTS="--check-pylint"
+    - env: OPTS="--emx-unittests"
   fast_finish: true
 
 before_install:
@@ -69,7 +79,8 @@ before_install:
 
 install:
 
-script: if [[ -n "$OPTS" ]]; then tools/run-tests.py $OPTS; fi
+script:
+  - if [[ -n "$OPTS" ]]; then tools/run-tests.py $OPTS; fi
 
 # The channel name "chat.freenode.net#jerryscript"
 # is encrypted against Samsung/jerryscript

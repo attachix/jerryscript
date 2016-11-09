@@ -19,7 +19,7 @@
 #include "lit-char-helpers.h"
 #include "js-parser-internal.h"
 
-#include "test-common.h"
+#include "../test-common.h"
 
 int
 main (void)

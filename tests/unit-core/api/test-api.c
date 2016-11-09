@@ -16,7 +16,7 @@
 #include "config.h"
 #include "jerryscript.h"
 
-#include "test-common.h"
+#include "../test-common.h"
 
 const char *test_source = (
                            "function assert (arg) { "
@@ -264,8 +264,6 @@ foreach (const jerry_value_t name, /**< field name */
 
   TEST_ASSERT (false);
   return false;
-
-
 } /* foreach */
 
 static bool
@@ -447,7 +445,7 @@ main (void)
   utf8_length = jerry_get_utf8_string_length (args[0]);
 
   cesu8_sz = jerry_get_string_size (args[0]);
-  utf8_sz =  jerry_get_utf8_string_size (args[0]);
+  utf8_sz = jerry_get_utf8_string_size (args[0]);
 
   TEST_ASSERT (cesu8_length == 10 && utf8_length == 8);
   TEST_ASSERT (cesu8_sz != utf8_sz);
@@ -502,7 +500,7 @@ main (void)
   utf8_length = jerry_get_utf8_string_length (args[0]);
 
   cesu8_sz = jerry_get_string_size (args[0]);
-  utf8_sz =  jerry_get_utf8_string_size (args[0]);
+  utf8_sz = jerry_get_utf8_string_size (args[0]);
 
   TEST_ASSERT (cesu8_length == 7 && utf8_length == 6);
   TEST_ASSERT (cesu8_sz != utf8_sz);
@@ -517,7 +515,7 @@ main (void)
   utf8_length = jerry_get_utf8_string_length (args[0]);
 
   cesu8_sz = jerry_get_string_size (args[0]);
-  utf8_sz =  jerry_get_utf8_string_size (args[0]);
+  utf8_sz = jerry_get_utf8_string_size (args[0]);
 
   TEST_ASSERT (cesu8_length == utf8_length);
   TEST_ASSERT (cesu8_length == 10);
@@ -792,9 +790,9 @@ main (void)
   void *ptr = NULL;
   const jerry_object_native_info_t *out_info_p;
   is_ok = jerry_get_object_native_pointer (res, &ptr, &out_info_p);
-  TEST_ASSERT (is_ok
-               && (uintptr_t) ptr == (uintptr_t) 0x0012345678abcdefull
-               && out_info_p == &JERRY_NATIVE_HANDLE_INFO_FOR_CTYPE (bind2));
+  TEST_ASSERT (is_ok);
+  TEST_ASSERT ((uintptr_t) ptr == (uintptr_t) 0x0012345678abcdefull);
+  TEST_ASSERT (out_info_p == &JERRY_NATIVE_HANDLE_INFO_FOR_CTYPE (bind2));
 
   /* Passing NULL for out_info_p is allowed. */
   is_ok = jerry_get_object_native_pointer (res, &ptr, NULL);
@@ -1079,9 +1077,13 @@ main (void)
 
     jerry_release_value (err_str_val);
     jerry_release_value (parsed_code_val);
+#ifdef EMSCRIPTEN
+    /* Exact message depends on host VM */
+    TEST_ASSERT (strstr ((char *) err_str_buf, "SyntaxError"));
+#else
     TEST_ASSERT (!strcmp ((char *) err_str_buf,
                           "SyntaxError: Primary expression expected. [line: 2, column: 10]"));
-
+#endif
     jerry_cleanup ();
   }
 
@@ -1137,7 +1139,7 @@ main (void)
                                 num_magic_string_items,
                                 magic_string_lengths);
 
-  const char *ms_code_src_p = "var global = {}; var console = [1]; var process = 1;";
+  const char *ms_code_src_p = "var global = {}; var console = [1]; var _process = 1;";
   parsed_code_val = jerry_parse ((jerry_char_t *) ms_code_src_p, strlen (ms_code_src_p), false);
   TEST_ASSERT (!jerry_value_has_error_flag (parsed_code_val));
 

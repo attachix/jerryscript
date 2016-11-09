@@ -16,7 +16,7 @@
 #include "jerryscript.h"
 #include "jerryscript-port.h"
 #include "jerryscript-port-default.h"
-#include "test-common.h"
+#include "../test-common.h"
 
 #ifndef CONFIG_DISABLE_ES2015_PROMISE_BUILTIN
 

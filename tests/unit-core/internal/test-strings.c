@@ -17,7 +17,7 @@
 #include "lit-strings.h"
 #include "ecma-init-finalize.h"
 
-#include "test-common.h"
+#include "../test-common.h"
 
 /* Iterations count. */
 #define test_iters (1024)

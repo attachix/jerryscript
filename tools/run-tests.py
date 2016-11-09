@@ -51,6 +51,14 @@ JERRY_UNITTESTS_OPTIONS = [
             ['--doctests', '--jerry-cmdline=off', '--debug', '--error-messages=on', '--snapshot-save=on', '--snapshot-exec=on', '--vm-exec-stop=on', '--profile=es2015-subset'])
 ]
 
+# Test Options for emx-unittests
+JERRY_EMX_UNITTESTS_OPTIONS = [
+    Options('unittests',
+            ['--unittests', '--jerry-cmdline=off', '--error-messages=on', '--snapshot-save=on', '--snapshot-exec=on', '--vm-exec-stop=on', '--profile=es2015-subset', '--mem-stats=on']),
+    Options('unittests-debug',
+            ['--unittests', '--jerry-cmdline=off', '--debug', '--error-messages=on', '--snapshot-save=on', '--snapshot-exec=on', '--vm-exec-stop=on', '--profile=es2015-subset', '--mem-stats=on'])
+]
+
 # Test options for jerry-tests
 JERRY_TESTS_OPTIONS = [
     Options('jerry_tests'),
@@ -159,6 +167,7 @@ def get_arguments():
     parser.add_argument('--jerry-tests', action='store_true', default=False, help='Run jerry-tests')
     parser.add_argument('--jerry-test-suite', action='store_true', default=False, help='Run jerry-test-suite')
     parser.add_argument('--unittests', action='store_true', default=False, help='Run unittests (including doctests)')
+    parser.add_argument('--emx-unittests', action='store_true', default=False, help='Run unittests for emscripten')
     parser.add_argument('--precommit', action='store_true', default=False, dest='all', help='Run all test')
     parser.add_argument('--test262', action='store_true', default=False, help='Run test262')
 
@@ -327,6 +336,21 @@ def run_unittests(options):
 
     return ret_build | ret_test
 
+def run_emx_unittests(options):
+    ret_build = ret_test = 0
+    options.buildoptions = "--emscripten-simulated-jerry-api=ON"
+    for job in JERRY_EMX_UNITTESTS_OPTIONS:
+        ret_build, bin_dir_path = create_binary(job, options)
+        if ret_build:
+            break
+
+        ret_test |= run_check([
+            settings.UNITTEST_RUNNER_SCRIPT,
+            bin_dir_path
+        ])
+
+    return ret_build | ret_test
+
 def run_buildoption_test(options):
     for job in JERRY_BUILDOPTIONS:
         ret, _ = create_binary(job, options)
@@ -382,6 +406,9 @@ def main(options):
 
     if not ret and (options.all or options.buildoption_test):
         ret = run_buildoption_test(options)
+
+    if not ret and (options.emx_unittests):
+        ret = run_emx_unittests(options)
 
     sys.exit(ret)
 

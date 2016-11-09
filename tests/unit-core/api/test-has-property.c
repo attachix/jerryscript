@@ -15,7 +15,7 @@
 
 #include "config.h"
 #include "jerryscript.h"
-#include "test-common.h"
+#include "../test-common.h"
 
 static void
 assert_boolean_and_release (jerry_value_t result, bool expected)
