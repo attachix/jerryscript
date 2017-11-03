@@ -1592,7 +1592,7 @@ bool jerry_get_object_native_handle (const jerry_value_t obj_val,
   return (bool) EM_ASM_INT (
     {
       var value = __jerry.get ($0);
-      var internalProps = value.__jerryInternalProps;
+      var internalProps = __jerry._jerryInternalPropsWeakMap.get(value);
       var handle = internalProps.nativeHandle;
       if (handle === undefined)
       {
@@ -1616,7 +1616,7 @@ void jerry_set_object_native_handle (const jerry_value_t obj_val,
     EM_ASM_INT (
       {
         var value = __jerry.get ($0);
-        var internalProps = value.__jerryInternalProps;
+        var internalProps = __jerry._jerryInternalPropsWeakMap.get(value);
         internalProps.nativeHandle = $1;
         internalProps.nativeHandleFreeCb = $2;
       }
@@ -1634,7 +1634,7 @@ jerry_set_object_native_pointer (const jerry_value_t obj_val, /**< object to set
     EM_ASM_INT (
       {
         var value = __jerry.get ($0);
-        var internalProps = value.__jerryInternalProps;
+        var internalProps = __jerry._jerryInternalPropsWeakMap.get(value);
         internalProps.nativePtr = $1;
         internalProps.nativeInfo = $2;
       }
@@ -1655,7 +1655,7 @@ jerry_get_object_native_pointer (const jerry_value_t obj_val, /**< object to get
   return (bool) EM_ASM_INT (
     {
       var value = __jerry.get ($0);
-      var internalProps = value.__jerryInternalProps;
+      var internalProps = __jerry._jerryInternalPropsWeakMap.get(value);
       var ptr = internalProps.nativePtr;
       if (ptr === undefined)
       {

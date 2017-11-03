@@ -36,10 +36,13 @@
   };
 
   var hasInternalProps = function (value) {
-    return (canHaveInternalProps(value) && value.__jerryInternalProps);
+    return (canHaveInternalProps(value) && __jerry._jerryInternalPropsWeakMap.has(value));
   };
 
   global.__jerry = {
+    // Define a WeakMap to maintain the map between JS obj and its internal props
+    _jerryInternalPropsWeakMap: {},
+
     // _jerryToHostValueMap is a 'map' with entry objects that represent what
     // values the native side is holding a reference to (reference count is positive).
     // The _jerryToHostValueMap which will allow us to store and retrieve javascript
@@ -86,6 +89,11 @@
 
     _registerHostValue: function (value, pre_existing_jerry_value) {
       var jerry_value = pre_existing_jerry_value || this._nextObjectRef++;
+      // check this._nextObjectRef doesn't overflow the uint32_t type
+      // that is used on the C side.
+      if (this._nextObjectRef >= Math.pow(2,32)) {
+        throw new Error('The uint32_t jerry_value overflows!');
+      }
       var internalProps = {
         jerry_value: jerry_value,
       };
@@ -96,16 +104,11 @@
       // Primitives will always be kept in _jerryToHostValueMap (and leaked)
       // as a work-around, see this.release()
       if (canHaveInternalProps(value)) {
-        if (value.__jerryInternalProps) {
+        if (this._jerryInternalPropsWeakMap.has(value)) {
           // Use pre-existing internalProps:
-          internalProps = value.__jerryInternalProps
+          internalProps = this._jerryInternalPropsWeakMap.get(value);
         } else {
-          Object.defineProperty(value, '__jerryInternalProps', {
-            enumerable: false,
-            configurable: false,
-            writable: false,
-            value: internalProps,
-          });
+          this._jerryInternalPropsWeakMap.set(value, internalProps);
         }
       }
       var entry = {
@@ -116,15 +119,33 @@
         internalProps: internalProps
       };
       // Install garbage collection callback:
-      this.weak(value, _jerryhandleGarbageCollected.bind(this, internalProps));
+      entry.weak = this.weak(value, _jerryhandleGarbageCollected.bind(this, internalProps));
       this._jerryToHostValueMap[jerry_value] = entry;
       // console.log('created entry ' + jerry_value + ' for ' + value + ' at ' + stackTrace());
       return jerry_value;
     },
 
+    _addRefCount: function(entry) {
+      if(entry.refCount === 0) {
+        entry.value = this.strong(entry.weak);
+      }
+      entry.refCount++;
+    },
+
+    _minusRefCount: function(entry) {
+      if(entry.refCount === 0) {
+        throw new Error('Deref a value whose refCount is 0!');
+      }
+      entry.refCount--;
+      if(entry.refCount === 0) {
+        entry.value = entry.weak;
+      }
+    },
+
     reset: function () {
       this._jerryToHostValueMap = {};
       this._nextObjectRef = 1;
+      this._jerryInternalPropsWeakMap = new WeakMap();
     },
 
     // Given a jerry value, return the stored javascript value.
@@ -141,7 +162,7 @@
       var entry;
       // Fast path for already known/marked objects:
       if (hasInternalProps(value)) {
-        jerry_value = value.__jerryInternalProps.jerry_value;
+        jerry_value =this._jerryInternalPropsWeakMap.get(value).jerry_value;
         // Note: It's possible there is no entry in the map because the native
         // side did not retain it any more, we need to register it again in that case.
         entry = this._jerryToHostValueMap[jerry_value];
@@ -149,7 +170,7 @@
         entry = this._findEntryByHostValue(value);
       }
       if (entry) {
-        ++entry.refCount;
+        this._addRefCount(entry);
         return jerry_value || entry.jerry_value;
       }
       return this._registerHostValue(value, jerry_value);
@@ -161,7 +182,7 @@
 
     // Increase the reference count of the given jerry value
     acquire: function (jerry_value) {
-      this._getEntry(jerry_value).refCount++;
+      this._addRefCount(this._getEntry(jerry_value));
       return jerry_value;
     },
 
@@ -169,21 +190,7 @@
     // there are no more internal references.
     release: function (ref) {
       var entry = this._getEntry(ref);
-      entry.refCount--;
-
-      if (entry.refCount <= 0) {
-        // Don't remove primitives like string, number, etc because
-        // we would otherwise loose the jerry_value that should be
-        // associated with it. (It's not possible to add the
-        // __jerryInternalProps property w/o 'boxing' the primitive).
-        // The value might get 'sent back' to the native side later on
-        // and we want to make sure the jerry_value remains the same for
-        // the entirety of the lifetime of the value.
-        if (hasInternalProps(entry.value)) {
-          // console.log('deleting ' + ref + ' at ' + stackTrace());
-          delete this._jerryToHostValueMap[ref];
-        }
-      }
+      this._minusRefCount(entry);
     },
 
     setError: function (ref, state) {
@@ -291,6 +298,20 @@
         return obj;
       }
       return weakModule(obj, gcCallback);
+    };
+    __jerry.strong = function(obj) {
+      // only worked for the weak ref
+
+      if (obj === null) {
+        return obj;
+      }
+      var typeStr = typeof obj;
+      // The `weak` module only works for objects, not for primitive values.
+      if (typeStr !== 'object' && typeStr !== 'function') {
+        return obj;
+      }
+
+      return weakModule.get(obj);
     }
   }
   catch (e) {
@@ -302,5 +323,8 @@
     __jerry.weak = function (obj, gcCallback) {
       return obj;
     };
+    __jerry.strong = function(obj) {
+      return obj;
+    }
   }
 })();
