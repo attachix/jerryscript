@@ -450,13 +450,12 @@ bool jerry_value_is_undefined (const jerry_value_t value) /**< api value */
 bool
 jerry_value_is_promise (const jerry_value_t value) /**< api value */
 {
-  EM_ASM (
+  return (bool) EM_ASM_INT (
     {
-      console.warn ("jerry_value_is_promise() is not yet implemented");
+      var value = __jerry.get ($0);
+      return value instanceof Promise;
     }
-  );
-  JERRY_UNUSED (value);
-  return false;
+    , value);
 } /* jerry_value_is_promise */
 
 /*********************************
@@ -1011,12 +1010,24 @@ jerry_value_t jerry_create_undefined (void)
 
 jerry_value_t jerry_create_promise (void)
 {
-  EM_ASM (
+  return (jerry_value_t) EM_ASM_INT_V (
     {
-      console.warn ("jerry_set_vm_exec_stop_callback() is not implemented, ignoring the call.");
+      /* Save the resolve/reject function in the promise's internal props */
+      var resolve_func;
+      var reject_func;
+      var p = new Promise (function (f, r)
+        {
+          resolve_func = f;
+          reject_func = r;
+        }
+      );
+      var ref = __jerry.ref (p);
+      var internalProps = __jerry._jerryInternalPropsWeakMap.get (p);
+      internalProps.promiseResolveFunc = resolve_func;
+      internalProps.promiseRejectFunc = reject_func;
+      return ref;
     }
   );
-  return jerry_create_undefined ();
 } /* jerry_create_promise */
 
 /***********************************
@@ -1592,7 +1603,7 @@ bool jerry_get_object_native_handle (const jerry_value_t obj_val,
   return (bool) EM_ASM_INT (
     {
       var value = __jerry.get ($0);
-      var internalProps = __jerry._jerryInternalPropsWeakMap.get(value);
+      var internalProps = __jerry._jerryInternalPropsWeakMap.get (value);
       var handle = internalProps.nativeHandle;
       if (handle === undefined)
       {
@@ -1616,7 +1627,7 @@ void jerry_set_object_native_handle (const jerry_value_t obj_val,
     EM_ASM_INT (
       {
         var value = __jerry.get ($0);
-        var internalProps = __jerry._jerryInternalPropsWeakMap.get(value);
+        var internalProps = __jerry._jerryInternalPropsWeakMap.get (value);
         internalProps.nativeHandle = $1;
         internalProps.nativeHandleFreeCb = $2;
       }
@@ -1634,7 +1645,7 @@ jerry_set_object_native_pointer (const jerry_value_t obj_val, /**< object to set
     EM_ASM_INT (
       {
         var value = __jerry.get ($0);
-        var internalProps = __jerry._jerryInternalPropsWeakMap.get(value);
+        var internalProps = __jerry._jerryInternalPropsWeakMap.get (value);
         internalProps.nativePtr = $1;
         internalProps.nativeInfo = $2;
       }
@@ -1655,7 +1666,7 @@ jerry_get_object_native_pointer (const jerry_value_t obj_val, /**< object to get
   return (bool) EM_ASM_INT (
     {
       var value = __jerry.get ($0);
-      var internalProps = __jerry._jerryInternalPropsWeakMap.get(value);
+      var internalProps = __jerry._jerryInternalPropsWeakMap.get (value);
       var ptr = internalProps.nativePtr;
       if (ptr === undefined)
       {
@@ -1723,15 +1734,27 @@ jerry_resolve_or_reject_promise (jerry_value_t promise,
                                  jerry_value_t argument,
                                  bool is_resolve)
 {
-  EM_ASM (
+  if (!jerry_value_is_promise (promise))
+  {
+    return TYPE_ERROR_ARG;
+  }
+
+  return (jerry_value_t) EM_ASM_INT (
     {
-      console.warn ("jerry_resolve_or_reject_promise() is not yet implemented");
+      var p = __jerry.get ($0);
+      var arg = __jerry.get ($1);
+      var internalProps = __jerry._jerryInternalPropsWeakMap.get (p);
+      if ($2)
+      {
+        internalProps.promiseResolveFunc (arg);
+      }
+      else
+      {
+        internalProps.promiseRejectFunc (arg);
+      }
     }
+    , promise, argument, is_resolve
   );
-  JERRY_UNUSED (promise);
-  JERRY_UNUSED (argument);
-  JERRY_UNUSED (is_resolve);
-  return jerry_create_undefined ();
 } /* jerry_resolve_or_reject_promise */
 
 static void __attribute__((used))
