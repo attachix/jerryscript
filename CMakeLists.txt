@@ -42,6 +42,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Optional components
+set(EMSCRIPTEN_SNAPSHOT_COMPILER OFF CACHE BOOL "Build snapshot-compiler.js using Emscripten?")
 set(JERRY_CMDLINE           ON  CACHE BOOL "Build jerry command line tool?")
 set(JERRY_CMDLINE_TEST      OFF CACHE BOOL "Build jerry test command line tool?")
 set(JERRY_CMDLINE_SNAPSHOT  OFF CACHE BOOL "Build jerry snapshot command line tool?")
@@ -86,6 +87,14 @@ if("${PLATFORM}" STREQUAL "DARWIN")
   set(ENABLE_STRIP_MESSAGE       " (FORCED BY PLATFORM)")
 endif()
 
+if(EMSCRIPTEN_SNAPSHOT_COMPILER)
+  set(JERRY_LIBC         OFF)
+  set(JERRY_LIBM         OFF)
+
+  set(JERRY_LIBC_MESSAGE         " (FORCED BY EMSCRIPTEN)")
+  set(JERRY_LIBM_MESSAGE         " (FORCED BY EMSCRIPTEN)")
+endif()
+
 if(USING_TI)
   set(ENABLE_STRIP       OFF)
 
@@ -111,6 +120,7 @@ message(STATUS "CMAKE_BUILD_TYPE            " ${CMAKE_BUILD_TYPE})
 message(STATUS "CMAKE_C_COMPILER_ID         " ${CMAKE_C_COMPILER_ID})
 message(STATUS "CMAKE_SYSTEM_NAME           " ${CMAKE_SYSTEM_NAME})
 message(STATUS "CMAKE_SYSTEM_PROCESSOR      " ${CMAKE_SYSTEM_PROCESSOR})
+message(STATUS "EMSCRIPTEN_SNAPSHOT_COMPILER   " ${EMSCRIPTEN_SNAPSHOT_COMPILER})
 message(STATUS "BUILD_SHARED_LIBS           " ${BUILD_SHARED_LIBS})
 message(STATUS "ENABLE_LTO                  " ${ENABLE_LTO} ${ENABLE_LTO_MESSAGE})
 message(STATUS "ENABLE_STRIP                " ${ENABLE_STRIP} ${ENABLE_STRIP_MESSAGE})
@@ -180,13 +190,15 @@ if(ENABLE_LTO)
 endif()
 
 # Compiler / Linker flags
-if("${PLATFORM}" STREQUAL "DARWIN")
-  jerry_add_link_flags(-lSystem)
-  set(CMAKE_C_ARCHIVE_CREATE "<CMAKE_AR> Sqc <TARGET> <LINK_FLAGS> <OBJECTS>")
-  set(CMAKE_C_ARCHIVE_FINISH "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
-  set(CMAKE_SHARED_LINKER_FLAGS  "-undefined dynamic_lookup")
-elseif(NOT CYGWIN AND (USING_GCC OR USING_CLANG))
-  jerry_add_link_flags(-Wl,-z,noexecstack)
+if(NOT EMSCRIPTEN_SNAPSHOT_COMPILER)
+  if("${PLATFORM}" STREQUAL "DARWIN")
+    jerry_add_link_flags(-lSystem)
+    set(CMAKE_C_ARCHIVE_CREATE "<CMAKE_AR> Sqc <TARGET> <LINK_FLAGS> <OBJECTS>")
+    set(CMAKE_C_ARCHIVE_FINISH "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
+    set(CMAKE_SHARED_LINKER_FLAGS  "-undefined dynamic_lookup")
+  elseif(NOT CYGWIN AND (USING_GCC OR USING_CLANG))
+    jerry_add_link_flags(-Wl,-z,noexecstack)
+  endif()
 endif()
 
 if(USING_GCC OR USING_CLANG)
@@ -224,7 +236,7 @@ if(JERRY_LIBFUZZER)
 endif()
 
 # Strip binary
-if(ENABLE_STRIP AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+if(ENABLE_STRIP AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT EMSCRIPTEN_SNAPSHOT_COMPILER)
   jerry_add_link_flags(-s)
 endif()
 
@@ -277,4 +289,9 @@ endif()
 # Doctests
 if(DOCTESTS)
   add_subdirectory(tests/unit-doc)
+endif()
+
+# JerryScript snapshot-compiler.js
+if(EMSCRIPTEN_SNAPSHOT_COMPILER)
+  add_subdirectory(emscripten-snapshot-compiler)
 endif()

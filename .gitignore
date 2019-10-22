@@ -39,3 +39,7 @@ docs/doxygen
 # Tests
 tests/test262/
 .vs
+
+# Emscripten
+emscripten-snapshot-compiler/node_modules
+jsconfig.json

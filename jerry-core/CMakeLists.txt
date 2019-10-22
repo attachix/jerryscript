@@ -42,6 +42,15 @@ set(JERRY_GLOBAL_HEAP_SIZE          "(512)" CACHE STRING "Size of memory heap, i
 set(JERRY_GC_LIMIT                  "(0)"   CACHE STRING "Heap usage limit to trigger garbage collection")
 set(JERRY_STACK_LIMIT               "(0)"   CACHE STRING "Maximum stack usage size, in kilobytes")
 
+if(EMSCRIPTEN_SNAPSHOT_COMPILER)
+  set(JERRY_SNAPSHOT_SAVE ON)
+  set(JERRY_ERROR_MESSAGES ON)
+
+  set(FEATURE_SNAPSHOT_SAVE_MESSAGE  " (FORCED BY ENABLED EMSCRIPTEN_SNAPSHOT_COMPILER)")
+  set(FEATURE_ERROR_MESSAGES_MESSAGE " (FORCED BY ENABLED EMSCRIPTEN_SNAPSHOT_COMPILER)")
+endif()
+
+
 # Option overrides
 if(USING_MSVC)
   set(ENABLE_ALL_IN_ONE ON) # FIXME: This should not be needed but right now it is. To be tracked down and followed up.
@@ -85,7 +94,7 @@ endif()
 message(STATUS "ENABLE_ALL_IN_ONE              " ${ENABLE_ALL_IN_ONE} ${ENABLE_ALL_IN_ONE_MESSAGE})
 message(STATUS "JERRY_CPOINTER_32_BIT          " ${JERRY_CPOINTER_32_BIT} ${JERRY_CPOINTER_32_BIT_MESSAGE})
 message(STATUS "JERRY_DEBUGGER                 " ${JERRY_DEBUGGER})
-message(STATUS "JERRY_ERROR_MESSAGES           " ${JERRY_ERROR_MESSAGES})
+message(STATUS "JERRY_ERROR_MESSAGES           " ${JERRY_ERROR_MESSAGES}  ${FEATURE_ERROR_MESSAGES_MESSAGE})
 message(STATUS "JERRY_EXTERNAL_CONTEXT         " ${JERRY_EXTERNAL_CONTEXT})
 message(STATUS "JERRY_PARSER                   " ${JERRY_PARSER})
 message(STATUS "JERRY_LINE_INFO                " ${JERRY_LINE_INFO})

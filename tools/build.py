@@ -35,6 +35,27 @@ def default_toolchain():
                              'toolchain_%s_%s.cmake' % (sysname.lower(), machine.lower()))
     return toolchain if os.path.isfile(toolchain) else None
 
+
+def get_toolchain_from_arguments(arguments):
+    if arguments.emscripten_snapshot_compiler == 'ON':
+        if arguments.toolchain:
+            print('Cannot use --toolchain when using --emscripten-snapshot-compiler', file=sys.stderr)
+            sys.exit(-1)
+        if 'EMSCRIPTEN' not in os.environ:
+            print('No EMSCRIPTEN environment variable set.\n'
+              'Install the Emscripten SDK from https://kripken.github.io and\n'
+              'make sure to `source emsdk_env.sh` before building!', file=sys.stderr)
+            sys.exit(-1)
+        emx_root = os.environ['EMSCRIPTEN']
+        emx_toolchain = '%s/cmake/Modules/Platform/Emscripten.cmake' % emx_root
+        if not os.path.isfile(emx_toolchain):
+            print('Missing toolchain file at %s' % emx_toolchain, file=sys.stderr)
+            sys.exit(-1)
+        return emx_toolchain
+    else:
+        return arguments.toolchain
+
+
 def get_arguments():
     devhelp_preparser = argparse.ArgumentParser(add_help=False)
     devhelp_preparser.add_argument('--devhelp', action='store_true', default=False,
@@ -82,6 +103,9 @@ def get_arguments():
                           help='strip release binaries (%(choices)s)')
     buildgrp.add_argument('--toolchain', metavar='FILE', default=default_toolchain(),
                           help='specify toolchain file (default: %(default)s)')
+    parser.add_argument('--emscripten-snapshot-compiler', metavar='X', choices=['ON', 'OFF'], default='OFF',
+                        type=str.upper, help='build JerryScript snapshot-compiler.js'
+                                             ' with Emscripten (%(choices)s; default: %(default)s)')
     buildgrp.add_argument('-v', '--verbose', action='store_const', const='ON',
                           help='increase verbosity')
 
@@ -179,6 +203,7 @@ def generate_build_options(arguments):
     build_options_append('ENABLE_STRIP', arguments.strip)
     build_options_append('CMAKE_TOOLCHAIN_FILE', arguments.toolchain)
     build_options_append('CMAKE_VERBOSE_MAKEFILE', arguments.verbose)
+    build_options.append('EMSCRIPTEN_SNAPSHOT_COMPILER' % arguments.emscripten_snapshot_compiler)
 
     # optional components
     build_options_append('DOCTESTS', arguments.doctests)
