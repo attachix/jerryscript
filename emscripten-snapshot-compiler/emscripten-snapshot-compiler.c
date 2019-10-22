@@ -46,9 +46,9 @@ emscripten_snapshot_compiler_compile (const jerry_char_t *source_p, size_t sourc
   // while jerry_parse_and_save_snapshot () does not return errors...
   jerry_init (JERRY_INIT_EMPTY);
   jerry_value_t rv = jerry_parse (source_p, source_size, is_strict);
-  if (jerry_value_has_error_flag (rv))
+  if (jerry_value_is_error (rv))
   {
-    jerry_value_clear_error_flag (&rv);
+    jerry_get_value_from_error (&rv);
 
     const jerry_value_t js_str = jerry_value_to_string (rv);
     const jerry_size_t buffer_sz = jerry_get_utf8_string_size (js_str);

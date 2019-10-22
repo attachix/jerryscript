@@ -203,7 +203,9 @@ def generate_build_options(arguments):
     build_options_append('ENABLE_STRIP', arguments.strip)
     build_options_append('CMAKE_TOOLCHAIN_FILE', arguments.toolchain)
     build_options_append('CMAKE_VERBOSE_MAKEFILE', arguments.verbose)
-    build_options.append('EMSCRIPTEN_SNAPSHOT_COMPILER' % arguments.emscripten_snapshot_compiler)
+
+    # emscripten build option
+    build_options_append('EMSCRIPTEN_SNAPSHOT_COMPILER', arguments.emscripten_snapshot_compiler)
 
     # optional components
     build_options_append('DOCTESTS', arguments.doctests)
