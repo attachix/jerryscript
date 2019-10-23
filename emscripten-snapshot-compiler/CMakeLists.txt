@@ -27,12 +27,15 @@ set(EMCC_LINK_FLAGS
         "-s ERROR_ON_UNDEFINED_SYMBOLS=1"
         "-s SAFE_HEAP=1"
         "-s EXPORTED_FUNCTIONS=\"['_emscripten_snapshot_compiler_get_version', '_emscripten_snapshot_compiler_compile']\""
+        "-s EXTRA_EXPORTED_RUNTIME_METHODS=\"['ccall']\""
         "-g4"
         "--memory-init-file 0")
 
 jerry_create_executable(${EMSCRIPTEN_SNAPSHOT_COMPILER} "emscripten-snapshot-compiler.c")
 target_link_libraries(${EMSCRIPTEN_SNAPSHOT_COMPILER} jerry-port-default ${EMCC_LINK_FLAGS})
 set_target_properties(${EMSCRIPTEN_SNAPSHOT_COMPILER} PROPERTIES LINK_DEPENDS "${POST_JS};${PRE_JS}")
+set_target_properties(${EMSCRIPTEN_SNAPSHOT_COMPILER} PROPERTIES C_STANDARD 11)
 
 # In EM_ASM macros, C arguments are named $0, $1, etc.
 target_compile_options(${EMSCRIPTEN_SNAPSHOT_COMPILER} PRIVATE "-Wno-dollar-in-identifier-extension")
+target_compile_options(${EMSCRIPTEN_SNAPSHOT_COMPILER} PRIVATE "-Wno-gnu-zero-variadic-macro-arguments")

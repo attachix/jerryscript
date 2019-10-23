@@ -22,10 +22,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-int emscripten_snapshot_compiler_get_version (void);
-size_t emscripten_snapshot_compiler_compile (const jerry_char_t *source_p, jerry_size_t source_size, bool is_for_global,
-                                      	  	 bool is_strict, uint32_t *buffer_p, size_t buffer_size);
-
 int
 emscripten_snapshot_compiler_get_version (void)
 {
@@ -38,11 +34,9 @@ emscripten_snapshot_compiler_compile (const jerry_char_t *source_p, jerry_size_t
 {
   if (!jerry_is_valid_utf8_string (source_p, source_size))
   {
-    EM_ASM (
-      {
-        throw new Error ('Input must be valid UTF-8')
-      }
-    );
+    EM_ASM ({
+      throw new Error ('Input must be valid UTF-8');
+    });
     return 0;
   }
 
@@ -63,11 +57,9 @@ emscripten_snapshot_compiler_compile (const jerry_char_t *source_p, jerry_size_t
     (void) cp_sz;
     buffer[buffer_sz] = '\0';
     jerry_cleanup ();
-    EM_ASM_ARGS (
-      {
-        throw new Error (UTF8ToString ($0))
-      }
-    , buffer);
+    EM_ASM_ARGS ({
+        throw new Error (UTF8ToString ($0));
+    }, buffer);
     free (buffer);
     return 0;
   }

@@ -205,7 +205,7 @@ def generate_build_options(arguments):
     toolchain = get_toolchain_from_arguments(arguments)
     if toolchain:
         print("Using toolchain: %s" % toolchain)
-        build_options_append('CMAKE_TOOLCHAIN_FILE', arguments.toolchain)
+        build_options_append('CMAKE_TOOLCHAIN_FILE', toolchain)
 
     build_options_append('CMAKE_VERBOSE_MAKEFILE', arguments.verbose)
 
