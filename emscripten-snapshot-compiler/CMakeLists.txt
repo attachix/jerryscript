@@ -14,7 +14,9 @@
 
 
 cmake_minimum_required (VERSION 2.8.12)
-set(EMSCRIPTEN_SNAPSHOT_COMPILER jerryscript-snapshot-compiler)
+# The name of the files will be jsc.js and jsc.wasm.
+# jsc stands for Jerryscript Snapshot Compiler
+set(EMSCRIPTEN_SNAPSHOT_COMPILER jsc)
 project (${EMSCRIPTEN_SNAPSHOT_COMPILER} C)
 
 file(GLOB PRE_JS pre.js)
