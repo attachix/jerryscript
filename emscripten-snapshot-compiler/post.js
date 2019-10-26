@@ -75,7 +75,7 @@ Module['onRuntimeInitialized'] = function() {
       process.exit(-1);
     }
 
-    compileFile(
+    JSC.compileFile(
       options.inputPath, options.isForGlobal,
       options.isStrict, options.outputPath);
     process.exit(0);
