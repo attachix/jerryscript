@@ -409,7 +409,6 @@ jmem_heap_insert_block (jmem_heap_free_t *block_p, /**< block to insert */
   JMEM_VALGRIND_DEFINED_SPACE (block_p, sizeof (jmem_heap_free_t));
   JMEM_VALGRIND_DEFINED_SPACE (next_p, sizeof (jmem_heap_free_t));
 
-
   const uint32_t block_offset = JMEM_HEAP_GET_OFFSET_FROM_ADDR (block_p);
 
   /* Update prev. */
@@ -649,7 +648,15 @@ jmem_heap_realloc_block (void *ptr, /**< memory region to reallocate */
   JMEM_HEAP_STAT_ALLOC (new_size);
   return ret_block_p;
 #else /* ENABLED (JERRY_SYSTEM_ALLOCATOR) */
-  JERRY_CONTEXT (jmem_heap_allocated_size) += (new_size - old_size);
+  const size_t required_size = new_size - old_size;
+#if !ENABLED (JERRY_MEM_GC_BEFORE_EACH_ALLOC)
+  if (JERRY_CONTEXT (jmem_heap_allocated_size) + required_size >= JERRY_CONTEXT (jmem_heap_limit))
+#endif /* !ENABLED (JERRY_MEM_GC_BEFORE_EACH_ALLOC) */
+  {
+    ecma_free_unused_memory (JMEM_PRESSURE_LOW);
+  }
+
+  JERRY_CONTEXT (jmem_heap_allocated_size) += required_size;
 
   while (JERRY_CONTEXT (jmem_heap_allocated_size) >= JERRY_CONTEXT (jmem_heap_limit))
   {

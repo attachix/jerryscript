@@ -80,88 +80,50 @@ bool
 ecma_op_same_value (ecma_value_t x, /**< ecma value */
                     ecma_value_t y) /**< ecma value */
 {
-  const bool is_x_undefined = ecma_is_value_undefined (x);
-  const bool is_x_null = ecma_is_value_null (x);
-  const bool is_x_boolean = ecma_is_value_boolean (x);
-  const bool is_x_number = ecma_is_value_number (x);
-  const bool is_x_string = ecma_is_value_string (x);
-  const bool is_x_object = ecma_is_value_object (x);
-
-  const bool is_y_undefined = ecma_is_value_undefined (y);
-  const bool is_y_null = ecma_is_value_null (y);
-  const bool is_y_boolean = ecma_is_value_boolean (y);
-  const bool is_y_number = ecma_is_value_number (y);
-  const bool is_y_string = ecma_is_value_string (y);
-  const bool is_y_object = ecma_is_value_object (y);
-
-  const bool is_types_equal = ((is_x_undefined && is_y_undefined)
-                               || (is_x_null && is_y_null)
-                               || (is_x_boolean && is_y_boolean)
-                               || (is_x_number && is_y_number)
-                               || (is_x_string && is_y_string)
-                               || (is_x_object && is_y_object));
-
-  if (!is_types_equal)
-  {
-    return false;
-  }
-  else if (is_x_undefined || is_x_null)
+  if (x == y)
   {
     return true;
   }
-  else if (is_x_number)
+
+  ecma_type_t type_of_x = ecma_get_value_type_field (x);
+
+  if (type_of_x != ecma_get_value_type_field (y)
+      || type_of_x == ECMA_TYPE_DIRECT)
+  {
+    return false;
+  }
+
+  if (ecma_is_value_number (x))
   {
     ecma_number_t x_num = ecma_get_number_from_value (x);
     ecma_number_t y_num = ecma_get_number_from_value (y);
 
-    bool is_x_nan = ecma_number_is_nan (x_num);
-    bool is_y_nan = ecma_number_is_nan (y_num);
-
-    if (is_x_nan || is_y_nan)
+    if (ecma_number_is_nan (x_num) == ecma_number_is_nan (y_num))
     {
-      /*
-       * If both are NaN
-       *   return true;
-       * else
-       *   one of the numbers is NaN, and another - is not
-       *   return false;
-       */
-      return (is_x_nan && is_y_nan);
+      return true;
     }
-    else if (ecma_number_is_zero (x_num)
-             && ecma_number_is_zero (y_num)
-             && ecma_number_is_negative (x_num) != ecma_number_is_negative (y_num))
+
+    if (ecma_number_is_zero (x_num)
+        && ecma_number_is_zero (y_num)
+        && ecma_number_is_negative (x_num) != ecma_number_is_negative (y_num))
     {
       return false;
     }
-    else
-    {
-      return (x_num == y_num);
-    }
+
+    return (x_num == y_num);
   }
-  else if (is_x_string)
+
+  if (ecma_is_value_string (x))
   {
     ecma_string_t *x_str_p = ecma_get_string_from_value (x);
     ecma_string_t *y_str_p = ecma_get_string_from_value (y);
 
     return ecma_compare_ecma_strings (x_str_p, y_str_p);
   }
-  else if (is_x_boolean)
-  {
-    return (ecma_is_value_true (x) == ecma_is_value_true (y));
-  }
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
-  else if (ecma_is_value_symbol (x))
-  {
-    return x == y;
-  }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
-  else
-  {
-    JERRY_ASSERT (is_x_object);
 
-    return (ecma_get_object_from_value (x) == ecma_get_object_from_value (y));
-  }
+  JERRY_ASSERT (ecma_is_value_object (x) || ECMA_ASSERT_VALUE_IS_SYMBOL (x));
+
+  return false;
 } /* ecma_op_same_value */
 
 #if ENABLED (JERRY_ES2015_BUILTIN_MAP)
@@ -315,12 +277,12 @@ ecma_op_to_number (ecma_value_t value) /**< ecma value */
     ecma_string_t *str_p = ecma_get_string_from_value (value);
     return ecma_make_number_value (ecma_string_to_number (str_p));
   }
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
   if (ecma_is_value_symbol (value))
   {
     return ecma_raise_type_error (ECMA_ERR_MSG ("Cannot convert a Symbol value to a number."));
   }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
   if (ecma_is_value_object (value))
   {
@@ -416,12 +378,12 @@ ecma_get_number (ecma_value_t value, /**< ecma value*/
     return ECMA_VALUE_EMPTY;
   }
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
   if (ecma_is_value_symbol (value))
   {
     return ecma_raise_type_error (ECMA_ERR_MSG ("Cannot convert a Symbol value to a number."));
   }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
   JERRY_ASSERT (ecma_is_value_boolean (value));
 
@@ -430,16 +392,16 @@ ecma_get_number (ecma_value_t value, /**< ecma value*/
 } /* ecma_get_number */
 
 /**
- * ToString operation helper function.
+ * ToString operation.
  *
  * See also:
  *          ECMA-262 v5, 9.8
  *
  * @return NULL - if the conversion fails
- *         ecma-string - otherwise
+ *         pointer to the string descriptor - otherwise
  */
-static ecma_string_t *
-ecma_to_op_string_helper (ecma_value_t value) /**< ecma value */
+ecma_string_t *
+ecma_op_to_string (ecma_value_t value) /**< ecma value */
 {
   ecma_check_value_type_is_spec_defined (value);
 
@@ -452,7 +414,7 @@ ecma_to_op_string_helper (ecma_value_t value) /**< ecma value */
       return NULL;
     }
 
-    ecma_string_t *ret_string_p = ecma_to_op_string_helper (prim_value);
+    ecma_string_t *ret_string_p = ecma_op_to_string (prim_value);
 
     ecma_free_value (prim_value);
 
@@ -491,13 +453,13 @@ ecma_to_op_string_helper (ecma_value_t value) /**< ecma value */
   {
     return ecma_get_magic_string (LIT_MAGIC_STRING_NULL);
   }
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
   else if (ecma_is_value_symbol (value))
   {
     ecma_raise_type_error (ECMA_ERR_MSG ("Cannot convert a Symbol value to a string."));
     return NULL;
   }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
   JERRY_ASSERT (ecma_is_value_boolean (value));
 
   if (ecma_is_value_true (value))
@@ -506,31 +468,6 @@ ecma_to_op_string_helper (ecma_value_t value) /**< ecma value */
   }
 
   return ecma_get_magic_string (LIT_MAGIC_STRING_FALSE);
-} /* ecma_to_op_string_helper */
-
-/**
- * ToString operation.
- *
- * See also:
- *          ECMA-262 v5, 9.8
- *
- * @return ecma value
- *         Returned value must be freed with ecma_free_value
- */
-ecma_value_t
-ecma_op_to_string (ecma_value_t value) /**< ecma value */
-{
-  ecma_check_value_type_is_spec_defined (value);
-
-  ecma_string_t *string_p = ecma_to_op_string_helper (value);
-
-  if (JERRY_UNLIKELY (string_p == NULL))
-  {
-    /* Note: At this point the error has already been thrown. */
-    return ECMA_VALUE_ERROR;
-  }
-
-  return ecma_make_string_value (string_p);
 } /* ecma_op_to_string */
 
 /**
@@ -544,16 +481,16 @@ ecma_op_to_prop_name (ecma_value_t value) /**< ecma value */
 {
   ecma_check_value_type_is_spec_defined (value);
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
   if (ecma_is_value_symbol (value))
   {
     ecma_string_t *symbol_p = ecma_get_symbol_from_value (value);
     ecma_ref_ecma_string (symbol_p);
     return symbol_p;
   }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
-  return ecma_to_op_string_helper (value);
+  return ecma_op_to_string (value);
 } /* ecma_op_to_prop_name */
 
 /**
@@ -582,12 +519,12 @@ ecma_op_to_object (ecma_value_t value) /**< ecma value */
   {
     return ecma_copy_value (value);
   }
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
   else if (ecma_is_value_symbol (value))
   {
     return ecma_op_create_symbol_object (value);
   }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
   else
   {
     if (ecma_is_value_undefined (value)

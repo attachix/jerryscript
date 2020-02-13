@@ -40,22 +40,32 @@
 enum
 {
   ECMA_OBJECT_ROUTINE_START = ECMA_BUILTIN_ID__COUNT - 1,
-  ECMA_OBJECT_ROUTINE_DEFINE_PROPERTY,
-  ECMA_OBJECT_ROUTINE_GET_OWN_PROPERTY_DESCRIPTOR,
-  ECMA_OBJECT_ROUTINE_DEFINE_PROPERTIES,
+
   ECMA_OBJECT_ROUTINE_CREATE,
-  ECMA_OBJECT_ROUTINE_SEAL,
-  ECMA_OBJECT_ROUTINE_FREEZE,
-  ECMA_OBJECT_ROUTINE_PREVENT_EXTENSIONS,
-  ECMA_OBJECT_ROUTINE_IS_SEALED,
-  ECMA_OBJECT_ROUTINE_IS_FROZEN,
-  ECMA_OBJECT_ROUTINE_IS_EXTENSIBLE,
+  ECMA_OBJECT_ROUTINE_IS,
+  ECMA_OBJECT_ROUTINE_SET_PROTOTYPE_OF,
+
+  /* These should be in this order. */
+  ECMA_OBJECT_ROUTINE_DEFINE_PROPERTY,
+  ECMA_OBJECT_ROUTINE_DEFINE_PROPERTIES,
+
+  /* These should be in this order. */
+  ECMA_OBJECT_ROUTINE_ASSIGN,
+  ECMA_OBJECT_ROUTINE_GET_OWN_PROPERTY_DESCRIPTOR,
   ECMA_OBJECT_ROUTINE_GET_OWN_PROPERTY_NAMES,
   ECMA_OBJECT_ROUTINE_GET_OWN_PROPERTY_SYMBOLS,
-  ECMA_OBJECT_ROUTINE_KEYS,
   ECMA_OBJECT_ROUTINE_GET_PROTOTYPE_OF,
-  ECMA_OBJECT_ROUTINE_SET_PROTOTYPE_OF,
-  ECMA_OBJECT_ROUTINE_ASSIGN,
+  ECMA_OBJECT_ROUTINE_KEYS,
+
+  /* These should be in this order. */
+  ECMA_OBJECT_ROUTINE_FREEZE,
+  ECMA_OBJECT_ROUTINE_PREVENT_EXTENSIONS,
+  ECMA_OBJECT_ROUTINE_SEAL,
+
+  /* These should be in this order. */
+  ECMA_OBJECT_ROUTINE_IS_EXTENSIBLE,
+  ECMA_OBJECT_ROUTINE_IS_FROZEN,
+  ECMA_OBJECT_ROUTINE_IS_SEALED,
 };
 
 #define BUILTIN_INC_HEADER_NAME "ecma-builtin-object.inc.h"
@@ -124,50 +134,22 @@ ecma_builtin_object_dispatch_construct (const ecma_value_t *arguments_list_p, /*
  *         Returned value must be freed with ecma_free_value.
  */
 ecma_value_t
-ecma_builtin_object_object_get_prototype_of (ecma_value_t arg) /**< routine's argument */
+ecma_builtin_object_object_get_prototype_of (ecma_object_t *obj_p) /**< routine's argument */
 {
-  ecma_value_t ret_value = ECMA_VALUE_EMPTY;
-  bool was_object = ecma_is_value_object (arg);
-
-  /* 1. */
-  if (!was_object)
-  {
-#if ENABLED (JERRY_ES2015_BUILTIN)
-    arg = ecma_op_to_object (arg);
-    if (ECMA_IS_VALUE_ERROR (arg))
-    {
-      return arg;
-    }
-#else /* !ENABLED (JERRY_ES2015_BUILTIN) */
-    return ecma_raise_type_error (ECMA_ERR_MSG ("Argument is not an object."));
-#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
-  }
-  /* 2. */
-  ecma_object_t *obj_p = ecma_get_object_from_value (arg);
   jmem_cpointer_t prototype_cp = obj_p->u2.prototype_cp;
 
   if (prototype_cp != JMEM_CP_NULL)
   {
     ecma_object_t *prototype_p = ECMA_GET_NON_NULL_POINTER (ecma_object_t, prototype_cp);
-    ret_value = ecma_make_object_value (prototype_p);
     ecma_ref_object (prototype_p);
-  }
-  else
-  {
-    ret_value = ECMA_VALUE_NULL;
+    return ecma_make_object_value (prototype_p);
   }
 
-#if ENABLED (JERRY_ES2015_BUILTIN)
-  if (!was_object)
-  {
-    ecma_deref_object (obj_p);
-  }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
-
-  return ret_value;
+  return ECMA_VALUE_NULL;
 } /* ecma_builtin_object_object_get_prototype_of */
 
-#if ENABLED (JERRY_ES2015_BUILTIN)
+#if ENABLED (JERRY_ES2015)
+
 /**
  * [[SetPrototypeOf]]
  *
@@ -197,7 +179,6 @@ ecma_set_prototype_of (ecma_value_t o_value, /**< O */
   {
     ECMA_SET_NON_NULL_POINTER (v_cp, ecma_get_object_from_value (v_value));
   }
-
 
   /* 3., 4. */
   if (v_cp == o_p->u2.prototype_cp)
@@ -276,7 +257,8 @@ ecma_builtin_object_object_set_prototype_of (ecma_value_t arg1, /**< routine's f
   /* 5-8. */
   return ecma_set_prototype_of (arg1, arg2);
 } /* ecma_builtin_object_object_set_prototype_of */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
+
+#endif /* ENABLED (JERRY_ES2015) */
 
 /**
  * The Object object's 'getOwnPropertyNames' routine
@@ -293,7 +275,8 @@ ecma_builtin_object_object_get_own_property_names (ecma_object_t *obj_p) /**< ro
   return ecma_builtin_helper_object_get_properties (obj_p, ECMA_LIST_NO_OPTS);
 } /* ecma_builtin_object_object_get_own_property_names */
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
+
 /**
  * The Object object's 'getOwnPropertySymbols' routine
  *
@@ -306,9 +289,10 @@ ecma_builtin_object_object_get_own_property_names (ecma_object_t *obj_p) /**< ro
 static ecma_value_t
 ecma_builtin_object_object_get_own_property_symbols (ecma_object_t *obj_p) /**< routine's argument */
 {
-  return ecma_builtin_helper_object_get_properties (obj_p, ECMA_LIST_SYMBOLS);
+  return ecma_builtin_helper_object_get_properties (obj_p, ECMA_LIST_SYMBOLS_ONLY);
 } /* ecma_builtin_object_object_get_own_property_symbols */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+
+#endif /* ENABLED (JERRY_ES2015) */
 
 /**
  * The Object object's 'seal' routine
@@ -759,8 +743,8 @@ ecma_builtin_object_object_define_property (ecma_object_t *obj_p, /**< routine's
   return ecma_make_object_value (obj_p);
 } /* ecma_builtin_object_object_define_property */
 
+#if ENABLED (JERRY_ES2015)
 
-#if ENABLED (JERRY_ES2015_BUILTIN)
 /**
  * The Object object's 'assign' routine
  *
@@ -771,31 +755,14 @@ ecma_builtin_object_object_define_property (ecma_object_t *obj_p, /**< routine's
  *         Returned value must be freed with ecma_free_value.
  */
 static ecma_value_t
-ecma_builtin_object_object_assign (const ecma_value_t arguments_list_p[], /**< arguments list */
+ecma_builtin_object_object_assign (ecma_object_t *target_p, /**< target object */
+                                   const ecma_value_t arguments_list_p[], /**< arguments list */
                                    ecma_length_t arguments_list_len) /**< number of arguments */
 {
-  ecma_value_t target = arguments_list_len > 0 ? arguments_list_p[0] : ECMA_VALUE_UNDEFINED;
-
-  /* 1. */
-  ecma_value_t to_value = ecma_op_to_object (target);
-
-  if (ECMA_IS_VALUE_ERROR (to_value))
-  {
-    return to_value;
-  }
-
-  ecma_object_t *to_obj_p = ecma_get_object_from_value (to_value);
-
-  /* 2. */
-  if (arguments_list_len == 1)
-  {
-    return to_value;
-  }
-
   ecma_value_t ret_value = ECMA_VALUE_EMPTY;
 
   /* 4-5. */
-  for (uint32_t i = 1; i < arguments_list_len && ecma_is_value_empty (ret_value); i++)
+  for (uint32_t i = 0; i < arguments_list_len && ecma_is_value_empty (ret_value); i++)
   {
     ecma_value_t next_source = arguments_list_p[i];
 
@@ -813,15 +780,15 @@ ecma_builtin_object_object_assign (const ecma_value_t arguments_list_p[], /**< a
     ecma_object_t *from_obj_p = ecma_get_object_from_value (from_value);
 
     /* 5.b.iii */
-    /* TODO: extends this collection if symbols will be supported */
     ecma_collection_t *props_p = ecma_op_object_get_property_names (from_obj_p, ECMA_LIST_CONVERT_FAST_ARRAYS
-                                                                                | ECMA_LIST_ENUMERABLE);
+                                                                                | ECMA_LIST_ENUMERABLE
+                                                                                | ECMA_LIST_SYMBOLS);
 
     ecma_value_t *buffer_p = props_p->buffer_p;
 
     for (uint32_t j = 0; (j < props_p->item_count) && ecma_is_value_empty (ret_value); j++)
     {
-      ecma_string_t *property_name_p = ecma_get_string_from_value (buffer_p[j]);
+      ecma_string_t *property_name_p = ecma_get_prop_name_from_value (buffer_p[j]);
 
       /* 5.c.i-ii */
       ecma_property_descriptor_t prop_desc;
@@ -847,7 +814,7 @@ ecma_builtin_object_object_assign (const ecma_value_t arguments_list_p[], /**< a
         else
         {
           /* 5.c.iii.3 */
-          ecma_value_t status = ecma_op_object_put (to_obj_p, property_name_p, prop_value, true);
+          ecma_value_t status = ecma_op_object_put (target_p, property_name_p, prop_value, true);
 
           /* 5.c.iii.4 */
           if (ECMA_IS_VALUE_ERROR (status))
@@ -868,13 +835,30 @@ ecma_builtin_object_object_assign (const ecma_value_t arguments_list_p[], /**< a
   /* 6. */
   if (ecma_is_value_empty (ret_value))
   {
-    return to_value;
+    ecma_ref_object (target_p);
+    return ecma_make_object_value (target_p);
   }
 
-  ecma_deref_object (to_obj_p);
   return ret_value;
 } /* ecma_builtin_object_object_assign */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
+
+/**
+ * The Object object's 'is' routine
+ *
+ * See also:
+ *          ECMA-262 v6, 19.1.2.10
+ *
+ * @return ecma value
+ *         Returned value must be freed with ecma_free_value.
+ */
+static ecma_value_t
+ecma_builtin_object_object_is (ecma_value_t arg1, /**< routine's first argument */
+                               ecma_value_t arg2) /**< routine's second argument */
+{
+  return ecma_op_same_value (arg1, arg2) ? ECMA_VALUE_TRUE : ECMA_VALUE_FALSE;
+} /* ecma_builtin_object_object_is */
+
+#endif /* ENABLED (JERRY_ES2015) */
 
 /**
  * Dispatcher of the built-in's routines
@@ -904,103 +888,185 @@ ecma_builtin_object_dispatch_routine (uint16_t builtin_routine_id, /**< built-in
     {
       return ecma_builtin_object_object_create (arg1, arg2);
     }
-    case ECMA_OBJECT_ROUTINE_GET_PROTOTYPE_OF:
-    {
-      return ecma_builtin_object_object_get_prototype_of (arg1);
-    }
-#if ENABLED (JERRY_ES2015_BUILTIN)
+#if ENABLED (JERRY_ES2015)
     case ECMA_OBJECT_ROUTINE_SET_PROTOTYPE_OF:
     {
       return ecma_builtin_object_object_set_prototype_of (arg1, arg2);
     }
-    case ECMA_OBJECT_ROUTINE_ASSIGN:
+    case ECMA_OBJECT_ROUTINE_IS:
     {
-      return ecma_builtin_object_object_assign (arguments_list_p, arguments_number);
+      return ecma_builtin_object_object_is (arg1, arg2);
     }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
+#endif /* ENABLED (JERRY_ES2015) */
     default:
     {
       break;
     }
   }
 
+  ecma_object_t *obj_p;
+#if !ENABLED (JERRY_ES2015)
   if (!ecma_is_value_object (arg1))
   {
     return ecma_raise_type_error (ECMA_ERR_MSG ("Argument is not an object."));
   }
+#endif /* !ENABLED (JERRY_ES2015) */
 
-  ecma_object_t *obj_p = ecma_get_object_from_value (arg1);
-
-  if (builtin_routine_id <= ECMA_OBJECT_ROUTINE_GET_OWN_PROPERTY_DESCRIPTOR)
+  if (builtin_routine_id <= ECMA_OBJECT_ROUTINE_DEFINE_PROPERTIES)
   {
-    ecma_string_t *prop_name_p = ecma_op_to_prop_name (arg2);
-
-    if (prop_name_p == NULL)
+#if ENABLED (JERRY_ES2015)
+    if (!ecma_is_value_object (arg1))
     {
-      return ECMA_VALUE_ERROR;
+      return ecma_raise_type_error (ECMA_ERR_MSG ("Argument is not an object."));
     }
+#endif /* ENABLED (JERRY_ES2015) */
 
-    ecma_value_t ret_value;
+    obj_p = ecma_get_object_from_value (arg1);
 
     if (builtin_routine_id == ECMA_OBJECT_ROUTINE_DEFINE_PROPERTY)
     {
-      ret_value = ecma_builtin_object_object_define_property (obj_p, prop_name_p, arguments_list_p[2]);
-    }
-    else
-    {
-      JERRY_ASSERT (builtin_routine_id == ECMA_OBJECT_ROUTINE_GET_OWN_PROPERTY_DESCRIPTOR);
-      ret_value = ecma_builtin_object_object_get_own_property_descriptor (obj_p, prop_name_p);
+      ecma_string_t *prop_name_p = ecma_op_to_prop_name (arg2);
+
+      if (prop_name_p == NULL)
+      {
+        return ECMA_VALUE_ERROR;
+      }
+
+      ecma_value_t result = ecma_builtin_object_object_define_property (obj_p, prop_name_p, arguments_list_p[2]);
+
+      ecma_deref_ecma_string (prop_name_p);
+      return result;
     }
 
-    ecma_deref_ecma_string (prop_name_p);
-    return ret_value;
+    JERRY_ASSERT (builtin_routine_id == ECMA_OBJECT_ROUTINE_DEFINE_PROPERTIES);
+    return ecma_builtin_object_object_define_properties (obj_p, arg2);
   }
-
-  switch (builtin_routine_id)
+  else if (builtin_routine_id <= ECMA_OBJECT_ROUTINE_KEYS)
   {
-    case ECMA_OBJECT_ROUTINE_SEAL:
+#if ENABLED (JERRY_ES2015)
+    ecma_value_t object = ecma_op_to_object (arg1);
+    if (ECMA_IS_VALUE_ERROR (object))
     {
-      return ecma_builtin_object_object_seal (obj_p);
+      return object;
     }
-    case ECMA_OBJECT_ROUTINE_FREEZE:
+
+    obj_p = ecma_get_object_from_value (object);
+#else /* !ENABLED (JERRY_ES2015) */
+    obj_p = ecma_get_object_from_value (arg1);
+#endif /* ENABLED (JERRY_ES2015) */
+
+    ecma_value_t result;
+    switch (builtin_routine_id)
     {
-      return ecma_builtin_object_object_freeze (obj_p);
+      case ECMA_OBJECT_ROUTINE_GET_PROTOTYPE_OF:
+      {
+        result = ecma_builtin_object_object_get_prototype_of (obj_p);
+        break;
+      }
+      case ECMA_OBJECT_ROUTINE_GET_OWN_PROPERTY_NAMES:
+      {
+        result = ecma_builtin_object_object_get_own_property_names (obj_p);
+        break;
+      }
+#if ENABLED (JERRY_ES2015)
+      case ECMA_OBJECT_ROUTINE_ASSIGN:
+      {
+        result = ecma_builtin_object_object_assign (obj_p, arguments_list_p + 1, arguments_number - 1);
+        break;
+      }
+      case ECMA_OBJECT_ROUTINE_GET_OWN_PROPERTY_SYMBOLS:
+      {
+        result = ecma_builtin_object_object_get_own_property_symbols (obj_p);
+        break;
+      }
+#endif /* ENABLED (JERRY_ES2015) */
+      case ECMA_OBJECT_ROUTINE_KEYS:
+      {
+        result = ecma_builtin_object_object_keys (obj_p);
+        break;
+      }
+      case ECMA_OBJECT_ROUTINE_GET_OWN_PROPERTY_DESCRIPTOR:
+      {
+        ecma_string_t *prop_name_p = ecma_op_to_prop_name (arg2);
+
+        if (prop_name_p == NULL)
+        {
+          result = ECMA_VALUE_ERROR;
+          break;
+        }
+
+        result = ecma_builtin_object_object_get_own_property_descriptor (obj_p, prop_name_p);
+        ecma_deref_ecma_string (prop_name_p);
+        break;
+      }
+      default:
+      {
+        JERRY_UNREACHABLE ();
+      }
     }
-    case ECMA_OBJECT_ROUTINE_PREVENT_EXTENSIONS:
+
+#if ENABLED (JERRY_ES2015)
+    ecma_deref_object (obj_p);
+#endif /* ENABLED (JERRY_ES2015) */
+    return result;
+  }
+  else if (builtin_routine_id <= ECMA_OBJECT_ROUTINE_SEAL)
+  {
+#if ENABLED (JERRY_ES2015)
+    if (!ecma_is_value_object (arg1))
     {
-      return ecma_builtin_object_object_prevent_extensions (obj_p);
+      return ecma_copy_value (arg1);
     }
-    case ECMA_OBJECT_ROUTINE_IS_SEALED:
-    case ECMA_OBJECT_ROUTINE_IS_FROZEN:
+#endif /* ENABLED (JERRY_ES2015) */
+
+    obj_p = ecma_get_object_from_value (arg1);
+    switch (builtin_routine_id)
     {
-      return ecma_builtin_object_frozen_or_sealed_helper (obj_p,
-                                                          builtin_routine_id);
+      case ECMA_OBJECT_ROUTINE_SEAL:
+      {
+        return ecma_builtin_object_object_seal (obj_p);
+      }
+      case ECMA_OBJECT_ROUTINE_FREEZE:
+      {
+        return ecma_builtin_object_object_freeze (obj_p);
+      }
+      case ECMA_OBJECT_ROUTINE_PREVENT_EXTENSIONS:
+      {
+        return ecma_builtin_object_object_prevent_extensions (obj_p);
+      }
+      default:
+      {
+        JERRY_UNREACHABLE ();
+      }
     }
-    case ECMA_OBJECT_ROUTINE_IS_EXTENSIBLE:
+  }
+  else
+  {
+    JERRY_ASSERT (builtin_routine_id <= ECMA_OBJECT_ROUTINE_IS_SEALED);
+#if ENABLED (JERRY_ES2015)
+    if (!ecma_is_value_object (arg1))
     {
-      return ecma_builtin_object_object_is_extensible (obj_p);
+      return ecma_make_boolean_value (builtin_routine_id != ECMA_OBJECT_ROUTINE_IS_EXTENSIBLE);
     }
-    case ECMA_OBJECT_ROUTINE_GET_OWN_PROPERTY_NAMES:
+#endif /* ENABLED (JERRY_ES2015) */
+
+    obj_p = ecma_get_object_from_value (arg1);
+    switch (builtin_routine_id)
     {
-      return ecma_builtin_object_object_get_own_property_names (obj_p);
-    }
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
-    case ECMA_OBJECT_ROUTINE_GET_OWN_PROPERTY_SYMBOLS:
-    {
-      return ecma_builtin_object_object_get_own_property_symbols (obj_p);
-    }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
-    case ECMA_OBJECT_ROUTINE_KEYS:
-    {
-      return ecma_builtin_object_object_keys (obj_p);
-    }
-    case ECMA_OBJECT_ROUTINE_DEFINE_PROPERTIES:
-    {
-      return ecma_builtin_object_object_define_properties (obj_p, arg2);
-    }
-    default:
-    {
-      JERRY_UNREACHABLE ();
+      case ECMA_OBJECT_ROUTINE_IS_SEALED:
+      case ECMA_OBJECT_ROUTINE_IS_FROZEN:
+      {
+        return ecma_builtin_object_frozen_or_sealed_helper (obj_p,
+                                                            builtin_routine_id);
+      }
+      case ECMA_OBJECT_ROUTINE_IS_EXTENSIBLE:
+      {
+        return ecma_builtin_object_object_is_extensible (obj_p);
+      }
+      default:
+      {
+        JERRY_UNREACHABLE ();
+      }
     }
   }
 } /* ecma_builtin_object_dispatch_routine */

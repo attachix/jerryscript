@@ -46,13 +46,13 @@ ecma_op_resolve_reference_base (ecma_object_t *lex_env_p, /**< starting lexical 
 
   while (true)
   {
-#if ENABLED (JERRY_ES2015_CLASS)
+#if ENABLED (JERRY_ES2015)
     if (ecma_get_lex_env_type (lex_env_p) == ECMA_LEXICAL_ENVIRONMENT_SUPER_OBJECT_BOUND)
     {
       JERRY_ASSERT (lex_env_p->u2.outer_reference_cp != JMEM_CP_NULL);
       lex_env_p = ECMA_GET_NON_NULL_POINTER (ecma_object_t, lex_env_p->u2.outer_reference_cp);
     }
-#endif /* ENABLED (JERRY_ES2015_CLASS) */
+#endif /* ENABLED (JERRY_ES2015) */
 
     if (ecma_op_has_binding (lex_env_p, name_p))
     {
@@ -68,7 +68,7 @@ ecma_op_resolve_reference_base (ecma_object_t *lex_env_p, /**< starting lexical 
   }
 } /* ecma_op_resolve_reference_base */
 
-#if ENABLED (JERRY_ES2015_CLASS)
+#if ENABLED (JERRY_ES2015)
 /**
  * Resolve super reference.
  *
@@ -91,7 +91,58 @@ ecma_op_resolve_super_reference_value (ecma_object_t *lex_env_p) /**< starting l
     lex_env_p = ECMA_GET_NON_NULL_POINTER (ecma_object_t, lex_env_p->u2.outer_reference_cp);
   }
 } /* ecma_op_resolve_super_reference_value */
-#endif /* ENABLED (JERRY_ES2015_CLASS) */
+
+/**
+ * Helper method for HasBindig operation
+ *
+ * See also:
+ *         ECMA-262 v6, 8.1.1.2.1 steps 7-9;
+ *
+ * @return ECMA_VALUE_TRUE - if the property is unscopable
+ *         ECMA_VALUE_FALSE - if a the property is not unscopable
+ *         ECMA_VALUE_ERROR - otherwise
+ */
+ecma_value_t
+ecma_op_is_prop_unscopable (ecma_object_t *lex_env_p, /**< lexical environment */
+                            ecma_string_t *prop_name_p) /**< property's name */
+{
+  if (lex_env_p == ecma_get_global_environment ())
+  {
+    return ECMA_VALUE_FALSE;
+  }
+
+  ecma_object_t *binding_obj_p = ecma_get_lex_env_binding_object (lex_env_p);
+
+  ecma_value_t unscopables = ecma_op_object_get_by_symbol_id (binding_obj_p, LIT_GLOBAL_SYMBOL_UNSCOPABLES);
+
+  if (ECMA_IS_VALUE_ERROR (unscopables))
+  {
+    return unscopables;
+  }
+
+  if (ecma_is_value_object (unscopables))
+  {
+    ecma_object_t *unscopables_obj_p = ecma_get_object_from_value (unscopables);
+    ecma_value_t get_unscopables_value = ecma_op_object_get (unscopables_obj_p, prop_name_p);
+    ecma_deref_object (unscopables_obj_p);
+
+    if (ECMA_IS_VALUE_ERROR (get_unscopables_value))
+    {
+      return get_unscopables_value;
+    }
+
+    bool is_blocked = ecma_op_to_boolean (get_unscopables_value);
+
+    ecma_free_value (get_unscopables_value);
+
+    return ecma_make_boolean_value (is_blocked);
+  }
+
+  ecma_free_value (unscopables);
+
+  return ECMA_VALUE_FALSE;
+} /* ecma_op_is_prop_unscopable */
+#endif /* ENABLED (JERRY_ES2015) */
 
 /**
  * Resolve value corresponding to reference.
@@ -114,55 +165,93 @@ ecma_op_resolve_reference_value (ecma_object_t *lex_env_p, /**< starting lexical
 
       if (property_p != NULL)
       {
-        return ecma_fast_copy_value (ECMA_PROPERTY_VALUE_PTR (property_p)->value);
+        ecma_property_value_t *property_value_p = ECMA_PROPERTY_VALUE_PTR (property_p);
+
+#if ENABLED (JERRY_ES2015)
+        if (JERRY_UNLIKELY (property_value_p->value == ECMA_VALUE_UNINITIALIZED))
+        {
+          return ecma_raise_reference_error (ECMA_ERR_MSG ("Variables declared by let/const must be"
+                                                           " initialized before reading their value."));
+        }
+#endif /* ENABLED (JERRY_ES2015) */
+
+        return ecma_fast_copy_value (property_value_p->value);
       }
     }
     else if (lex_env_type == ECMA_LEXICAL_ENVIRONMENT_THIS_OBJECT_BOUND)
     {
       ecma_object_t *binding_obj_p = ecma_get_lex_env_binding_object (lex_env_p);
 
-#if ENABLED (JERRY_LCACHE)
-      ecma_property_t *property_p = ecma_lcache_lookup (binding_obj_p, name_p);
+#if ENABLED (JERRY_ES2015)
+      bool lcache_lookup_allowed = (lex_env_p == ecma_get_global_environment ());
+#else /* !ENABLED (JERRY_ES2015)*/
+      bool lcache_lookup_allowed = true;
+#endif /* ENABLED (JERRY_ES2015) */
 
-      if (property_p != NULL)
+      if (lcache_lookup_allowed)
       {
-        ecma_property_value_t *prop_value_p = ECMA_PROPERTY_VALUE_PTR (property_p);
+#if ENABLED (JERRY_LCACHE)
+        ecma_property_t *property_p = ecma_lcache_lookup (binding_obj_p, name_p);
 
-        if (ECMA_PROPERTY_GET_TYPE (*property_p) == ECMA_PROPERTY_TYPE_NAMEDDATA)
+        if (property_p != NULL)
         {
-          return ecma_fast_copy_value (prop_value_p->value);
+          ecma_property_value_t *prop_value_p = ECMA_PROPERTY_VALUE_PTR (property_p);
+
+          if (ECMA_PROPERTY_GET_TYPE (*property_p) == ECMA_PROPERTY_TYPE_NAMEDDATA)
+          {
+            return ecma_fast_copy_value (prop_value_p->value);
+          }
+
+          JERRY_ASSERT (ECMA_PROPERTY_GET_TYPE (*property_p) == ECMA_PROPERTY_TYPE_NAMEDACCESSOR);
+
+          ecma_getter_setter_pointers_t *get_set_pair_p = ecma_get_named_accessor_property (prop_value_p);
+
+          if (get_set_pair_p->getter_cp == JMEM_CP_NULL)
+          {
+            return ECMA_VALUE_UNDEFINED;
+          }
+
+          ecma_object_t *getter_p = ECMA_GET_NON_NULL_POINTER (ecma_object_t, get_set_pair_p->getter_cp);
+
+          ecma_value_t base_value = ecma_make_object_value (binding_obj_p);
+          return ecma_op_function_call (getter_p, base_value, NULL, 0);
         }
-
-        JERRY_ASSERT (ECMA_PROPERTY_GET_TYPE (*property_p) == ECMA_PROPERTY_TYPE_NAMEDACCESSOR);
-
-        ecma_getter_setter_pointers_t *get_set_pair_p = ecma_get_named_accessor_property (prop_value_p);
-
-        if (get_set_pair_p->getter_cp == JMEM_CP_NULL)
-        {
-          return ECMA_VALUE_UNDEFINED;
-        }
-
-        ecma_object_t *getter_p = ECMA_GET_NON_NULL_POINTER (ecma_object_t, get_set_pair_p->getter_cp);
-
-        ecma_value_t base_value = ecma_make_object_value (binding_obj_p);
-        return ecma_op_function_call (getter_p, base_value, NULL, 0);
-      }
 #endif /* ENABLED (JERRY_LCACHE) */
+      }
 
       ecma_value_t prop_value = ecma_op_object_find (binding_obj_p, name_p);
 
       if (ecma_is_value_found (prop_value))
       {
+#if ENABLED (JERRY_ES2015)
+        ecma_value_t blocked = ecma_op_is_prop_unscopable (lex_env_p, name_p);
+
+        if (ECMA_IS_VALUE_ERROR (blocked))
+        {
+          ecma_free_value (prop_value);
+          return blocked;
+        }
+
+        if (ecma_is_value_true (blocked))
+        {
+          ecma_free_value (prop_value);
+        }
+        else
+        {
+          return prop_value;
+        }
+#else /* !ENABLED (JERRY_ES2015) */
         return prop_value;
+#endif /* ENABLED (JERRY_ES2015) */
       }
     }
     else
     {
-#if ENABLED (JERRY_ES2015_CLASS)
+#if ENABLED (JERRY_ES2015)
       JERRY_ASSERT (lex_env_type == ECMA_LEXICAL_ENVIRONMENT_SUPER_OBJECT_BOUND);
-#else /* !ENABLED (JERRY_ES2015_CLASS) */
+#else /* !ENABLED (JERRY_ES2015) */
       JERRY_UNREACHABLE ();
-#endif /* ENABLED (JERRY_ES2015_CLASS) */
+#endif /* ENABLED (JERRY_ES2015) */
     }
 
     if (lex_env_p->u2.outer_reference_cp == JMEM_CP_NULL)

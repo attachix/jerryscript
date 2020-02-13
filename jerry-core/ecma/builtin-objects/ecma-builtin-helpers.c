@@ -27,6 +27,7 @@
 #include "ecma-objects.h"
 #include "ecma-try-catch-macro.h"
 #include "lit-magic-strings.h"
+#include "lit-char-helpers.h"
 
 /** \addtogroup ecma ECMA
  * @{
@@ -35,7 +36,7 @@
  * @{
  */
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
 /**
  * Helper function for Object.prototype.toString routine when
  * the @@toStringTag property is present
@@ -96,7 +97,7 @@ ecma_builtin_helper_object_to_string_tag_helper (ecma_value_t tag_value) /**< st
 
   return ecma_make_string_value (ret_string_p);
 } /* ecma_builtin_helper_object_to_string_tag_helper */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
 /**
  * Common implementation of the Object.prototype.toString routine
@@ -140,8 +141,8 @@ ecma_builtin_helper_object_to_string (const ecma_value_t this_arg) /**< this arg
 
     type_string = ecma_object_get_class_name (obj_p);
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
-    ecma_value_t tag_value = ecma_op_object_get_by_symbol_id (obj_p, LIT_MAGIC_STRING_TO_STRING_TAG);
+#if ENABLED (JERRY_ES2015)
+    ecma_value_t tag_value = ecma_op_object_get_by_symbol_id (obj_p, LIT_GLOBAL_SYMBOL_TO_STRING_TAG);
 
     if (ECMA_IS_VALUE_ERROR (tag_value))
     {
@@ -156,7 +157,7 @@ ecma_builtin_helper_object_to_string (const ecma_value_t this_arg) /**< this arg
     }
 
     ecma_free_value (tag_value);
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
     ecma_deref_object (obj_p);
   }
@@ -201,62 +202,67 @@ ecma_builtin_helper_object_to_string (const ecma_value_t this_arg) /**< this arg
  * @return ecma value
  *         Returned value must be freed with ecma_free_value.
  */
-ecma_value_t
+ecma_string_t *
 ecma_builtin_helper_get_to_locale_string_at_index (ecma_object_t *obj_p, /**< this object */
                                                    uint32_t index) /**< array index */
 {
-  ecma_value_t ret_value = ECMA_VALUE_EMPTY;
-  ecma_string_t *index_string_p = ecma_new_ecma_string_from_uint32 (index);
+  ecma_value_t index_value = ecma_op_object_get_by_uint32_index (obj_p, index);
 
-  ECMA_TRY_CATCH (index_value,
-                  ecma_op_object_get (obj_p, index_string_p),
-                  ret_value);
+  if (ECMA_IS_VALUE_ERROR (index_value))
+  {
+    return NULL;
+  }
 
   if (ecma_is_value_undefined (index_value) || ecma_is_value_null (index_value))
   {
-    ret_value = ecma_make_magic_string_value (LIT_MAGIC_STRING__EMPTY);
+    return ecma_get_magic_string (LIT_MAGIC_STRING__EMPTY);
   }
-  else
+
+  ecma_value_t index_obj_value = ecma_op_to_object (index_value);
+
+  if (ECMA_IS_VALUE_ERROR (index_obj_value))
   {
-    ECMA_TRY_CATCH (index_obj_value,
-                    ecma_op_to_object (index_value),
-                    ret_value);
-
-    ecma_object_t *index_obj_p = ecma_get_object_from_value (index_obj_value);
-
-    ECMA_TRY_CATCH (to_locale_value,
-                    ecma_op_object_get_by_magic_id (index_obj_p, LIT_MAGIC_STRING_TO_LOCALE_STRING_UL),
-                    ret_value);
-
-    if (ecma_op_is_callable (to_locale_value))
-    {
-      ecma_object_t *locale_func_obj_p = ecma_get_object_from_value (to_locale_value);
-      ECMA_TRY_CATCH (call_value,
-                      ecma_op_function_call (locale_func_obj_p,
-                                             ecma_make_object_value (index_obj_p),
-                                             NULL,
-                                             0),
-                      ret_value);
-      ret_value = ecma_op_to_string (call_value);
-      ECMA_FINALIZE (call_value);
-
-    }
-    else
-    {
-      ret_value = ecma_raise_type_error (ECMA_ERR_MSG ("'toLocaleString' is missing or not a function."));
-    }
-
-    ECMA_FINALIZE (to_locale_value);
-    ECMA_FINALIZE (index_obj_value);
+    ecma_free_value (index_value);
+    return NULL;
   }
 
-  ECMA_FINALIZE (index_value);
+  ecma_string_t *ret_string_p = NULL;
+  ecma_object_t *index_obj_p = ecma_get_object_from_value (index_obj_value);
+  ecma_value_t to_locale_value = ecma_op_object_get_by_magic_id (index_obj_p, LIT_MAGIC_STRING_TO_LOCALE_STRING_UL);
 
-  ecma_deref_ecma_string (index_string_p);
+  if (ECMA_IS_VALUE_ERROR (to_locale_value))
+  {
+    goto cleanup;
+  }
 
-  return ret_value;
+  if (!ecma_op_is_callable (to_locale_value))
+  {
+    ecma_free_value (to_locale_value);
+    ecma_raise_type_error (ECMA_ERR_MSG ("'toLocaleString' is missing or not a function."));
+    goto cleanup;
+  }
+
+  ecma_object_t *locale_func_obj_p = ecma_get_object_from_value (to_locale_value);
+  ecma_value_t call_value = ecma_op_function_call (locale_func_obj_p,
+                                                   index_obj_value,
+                                                   NULL,
+                                                   0);
+  ecma_deref_object (locale_func_obj_p);
+
+  if (ECMA_IS_VALUE_ERROR (call_value))
+  {
+    goto cleanup;
+  }
+
+  ret_string_p = ecma_op_to_string (call_value);
+  ecma_free_value (call_value);
+
+cleanup:
+  ecma_deref_object (index_obj_p);
+  ecma_free_value (index_value);
+
+  return ret_string_p;
 } /* ecma_builtin_helper_get_to_locale_string_at_index */
-
 
 /**
  * The Object.keys and Object.getOwnPropertyNames routine's common part.
@@ -286,7 +292,7 @@ ecma_builtin_helper_object_get_properties (ecma_object_t *obj_p, /**< object */
     return new_array;
   }
 
-  JERRY_ASSERT (((ecma_extended_object_t *) new_array_p)->u.array.is_fast_mode);
+  JERRY_ASSERT (ecma_op_object_is_fast_array (new_array_p));
 
   ecma_value_t *buffer_p = props_p->buffer_p;
   ecma_value_t *values_p = ecma_fast_array_extend (new_array_p, props_p->item_count);
@@ -301,93 +307,49 @@ ecma_builtin_helper_object_get_properties (ecma_object_t *obj_p, /**< object */
 /**
  * Helper function to normalizing an array index
  *
- * This function clamps the given index to the [0, length] range.
- * If the index is negative, it is used as the offset from the end of the array,
- * to compute normalized index.
- * If the index is greater than the length of the array, the normalized index will be the length of the array.
- * If is_last_index_of is true, then we use the method in ECMA-262 v6, 22.2.3.16 to compute the normalized index.
  * See also:
- *          ECMA-262 v5, 15.4.4.10 steps 5-6, 7 (part 2) and 8
- *          ECMA-262 v5, 15.4.4.12 steps 5-6
- *          ECMA-262 v5, 15.4.4.14 steps 5
- *          ECMA-262 v5, 15.5.4.13 steps 4, 5 (part 2) and 6-7
+ *          ECMA-262 v5, 15.4.4.10 steps 5, 6, 7 part 2, 8
+ *          ECMA-262 v5, 15.4.4.12 steps 5, 6
+ *          ECMA-262 v5, 15.5.4.13 steps 4 - 7
+ *          ECMA-262 v6, 22.1.3.6 steps 5 - 7, 8 part 2, 9, 10
+ *          ECMA-262 v6, 22.1.3.3 steps 5 - 10, 11 part 2, 12, 13
+ *          ECMA-262 v6, 22.2.3.5 steps 5 - 10, 11 part 2, 12, 13
+ *          ECMA-262 v6, 22.2.3.23 steps 5 - 10
+ *          ECMA-262 v6, 24.1.4.3 steps 6 - 8, 9 part 2, 10, 11
+ *          ECMA-262 v6, 22.2.3.26 steps 7 - 9, 10 part 2, 11, 12
+ *          ECMA-262 v6, 22.2.3.8 steps 5 - 7, 8 part 2, 9, 10
  *
  * Used by:
  *         - The Array.prototype.slice routine.
  *         - The Array.prototype.splice routine.
- *         - The Array.prototype.indexOf routine.
  *         - The String.prototype.slice routine.
- *         - The TypedArray.prototype.indexOf routine.
- *         - The TypedArray.prototype.lastIndexOf routine
+ *         - The Array.prototype.fill routine.
+ *         - The Array.prototype.copyWithin routine.
+ *         - The TypedArray.prototype.copyWithin routine.
+ *         - The TypedArray.prototype.slice routine.
+ *         - The ArrayBuffer.prototype.slice routine.
+ *         - The TypedArray.prototype.subarray routine.
+ *         - The TypedArray.prototype.fill routine.
  *
- * @return uint32_t - the normalized value of the index
+ * @return ECMA_VALUE_EMPTY if successful
+ *         conversion error otherwise
  */
 uint32_t
-ecma_builtin_helper_array_index_normalize (ecma_number_t index, /**< index */
+ecma_builtin_helper_array_index_normalize (ecma_value_t arg, /**< index */
                                            uint32_t length, /**< array's length */
-                                           bool is_last_index_of) /**< true - normalize for lastIndexOf method*/
+                                           uint32_t *number_p) /**< [out] uint32_t */
 {
-  uint32_t norm_index;
+  ecma_number_t to_int;
 
-  if (!ecma_number_is_nan (index))
+  if (ECMA_IS_VALUE_ERROR (ecma_op_to_integer (arg, &to_int)))
   {
-
-    if (ecma_number_is_zero (index))
-    {
-      norm_index = 0;
-    }
-    else if (ecma_number_is_infinity (index))
-    {
-      if (is_last_index_of)
-      {
-        norm_index = ecma_number_is_negative (index) ? (uint32_t) -1 : length - 1;
-      }
-      else
-      {
-        norm_index = ecma_number_is_negative (index) ? 0 : length;
-      }
-    }
-    else
-    {
-      if (ecma_number_is_negative (index))
-      {
-        ecma_number_t index_neg = -index;
-
-        if (is_last_index_of)
-        {
-          norm_index = length - ecma_number_to_uint32 (index_neg);
-        }
-        else
-        {
-          if (index_neg > length)
-          {
-            norm_index = 0;
-          }
-          else
-          {
-            norm_index = length - ecma_number_to_uint32 (index_neg);
-          }
-        }
-      }
-      else
-      {
-        if (index > length)
-        {
-          norm_index = is_last_index_of ? length - 1 : length;
-        }
-        else
-        {
-          norm_index = ecma_number_to_uint32 (index);
-        }
-      }
-    }
-  }
-  else
-  {
-    norm_index = 0;
+    return ECMA_VALUE_ERROR;
   }
 
-  return norm_index;
+  *number_p = ((to_int < 0) ? (uint32_t) JERRY_MAX ((length + to_int), 0)
+                            : (uint32_t) JERRY_MIN (to_int, length));
+
+  return ECMA_VALUE_EMPTY;
 } /* ecma_builtin_helper_array_index_normalize */
 
 /**
@@ -403,80 +365,80 @@ ecma_builtin_helper_array_index_normalize (ecma_number_t index, /**< index */
  *         Returned value must be freed with ecma_free_value.
  */
 ecma_value_t
-ecma_builtin_helper_array_concat_value (ecma_object_t *obj_p, /**< array */
+ecma_builtin_helper_array_concat_value (ecma_object_t *array_obj_p, /**< array */
                                         uint32_t *length_p, /**< [in,out] array's length */
                                         ecma_value_t value) /**< value to concat */
 {
-  ecma_value_t ret_value = ECMA_VALUE_EMPTY;
-
   /* 5.b */
-  if (ecma_is_value_object (value)
-      && (ecma_object_get_class_name (ecma_get_object_from_value (value)) == LIT_MAGIC_STRING_ARRAY_UL))
+#if ENABLED (JERRY_ES2015)
+  ecma_value_t is_spreadable = ecma_op_is_concat_spreadable (value);
+
+  if (ECMA_IS_VALUE_ERROR (is_spreadable))
   {
-    /* 5.b.ii */
-    ECMA_TRY_CATCH (arg_len_value,
-                    ecma_op_object_get_by_magic_id (ecma_get_object_from_value (value),
-                                                    LIT_MAGIC_STRING_LENGTH),
-                    ret_value);
-    ECMA_OP_TO_NUMBER_TRY_CATCH (arg_len_number, arg_len_value, ret_value);
+    return is_spreadable;
+  }
 
-    uint32_t arg_len = ecma_number_to_uint32 (arg_len_number);
+  bool spread_object = is_spreadable == ECMA_VALUE_TRUE;
+#else /* !ENABLED (JERRY_ES2015) */
+  bool spread_object = ecma_is_value_array (value);
+#endif /* ENABLED (JERRY_ES2015) */
 
-    /* 5.b.iii */
-    for (uint32_t array_index = 0;
-         array_index < arg_len && ecma_is_value_empty (ret_value);
-         array_index++)
+  if (spread_object)
+  {
+    ecma_object_t *obj_p = ecma_get_object_from_value (value);
+
+#if ENABLED (JERRY_ES2015)
+    uint32_t arg_len;
+    ecma_value_t error = ecma_op_object_get_length (obj_p, &arg_len);
+
+    if (ECMA_IS_VALUE_ERROR (error))
     {
-      ecma_string_t *array_index_string_p = ecma_new_ecma_string_from_uint32 (array_index);
-
+      return error;
+    }
+#else /* !ENABLED (JERRY_ES2015) */
+    /* 5.b.ii */
+    uint32_t arg_len = ecma_array_get_length (obj_p);
+#endif /* ENABLED (JERRY_ES2015) */
+    /* 5.b.iii */
+    for (uint32_t array_index = 0; array_index < arg_len; array_index++)
+    {
       /* 5.b.iii.2 */
-      ECMA_TRY_CATCH (get_value,
-                      ecma_op_object_find (ecma_get_object_from_value (value),
-                                           array_index_string_p),
-                      ret_value);
+      ecma_value_t get_value = ecma_op_object_find_by_uint32_index (obj_p, array_index);
 
-      if (ecma_is_value_found (get_value))
+      if (ECMA_IS_VALUE_ERROR (get_value))
       {
-        /* 5.b.iii.3.a */
-        ecma_string_t *new_array_index_string_p = ecma_new_ecma_string_from_uint32 (*length_p + array_index);
-
-        /* 5.b.iii.3.b */
-        /* This will always be a simple value since 'is_throw' is false, so no need to free. */
-        ecma_value_t put_comp = ecma_builtin_helper_def_prop (obj_p,
-                                                              new_array_index_string_p,
-                                                              get_value,
-                                                              ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE_WRITABLE);
-
-        JERRY_ASSERT (ecma_is_value_true (put_comp));
-        ecma_deref_ecma_string (new_array_index_string_p);
+        return get_value;
       }
 
-      ECMA_FINALIZE (get_value);
+      if (!ecma_is_value_found (get_value))
+      {
+        continue;
+      }
 
-      ecma_deref_ecma_string (array_index_string_p);
+      /* 5.b.iii.3.b */
+      /* This will always be a simple value since 'is_throw' is false, so no need to free. */
+      ecma_value_t put_comp = ecma_builtin_helper_def_prop_by_index (array_obj_p,
+                                                                     *length_p + array_index,
+                                                                     get_value,
+                                                                     ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE_WRITABLE);
+
+      JERRY_ASSERT (ecma_is_value_true (put_comp));
+      ecma_free_value (get_value);
     }
 
     *length_p += arg_len;
-
-    ECMA_OP_TO_NUMBER_FINALIZE (arg_len_number);
-    ECMA_FINALIZE (arg_len_value);
-  }
-  else
-  {
-    ecma_string_t *new_array_index_string_p = ecma_new_ecma_string_from_uint32 ((*length_p)++);
-
-    /* 5.c.i */
-    /* This will always be a simple value since 'is_throw' is false, so no need to free. */
-    ecma_value_t put_comp = ecma_builtin_helper_def_prop (obj_p,
-                                                          new_array_index_string_p,
-                                                          value,
-                                                          ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE_WRITABLE);
-    JERRY_ASSERT (ecma_is_value_true (put_comp));
-
-    ecma_deref_ecma_string (new_array_index_string_p);
+    return ECMA_VALUE_EMPTY;
   }
 
-  return ret_value;
+  /* 5.c.i */
+  /* This will always be a simple value since 'is_throw' is false, so no need to free. */
+  ecma_value_t put_comp = ecma_builtin_helper_def_prop_by_index (array_obj_p,
+                                                                 (*length_p)++,
+                                                                 value,
+                                                                 ECMA_PROPERTY_CONFIGURABLE_ENUMERABLE_WRITABLE);
+  JERRY_ASSERT (ecma_is_value_true (put_comp));
+
+  return ECMA_VALUE_EMPTY;
 } /* ecma_builtin_helper_array_concat_value */
 
 /**
@@ -559,31 +521,48 @@ ecma_builtin_helper_string_prototype_object_index_of (ecma_string_t *original_st
   /* 5 (indexOf) -- 6 (lastIndexOf) */
   const ecma_length_t original_len = ecma_string_get_length (original_str_p);
 
-#if ENABLED (JERRY_ES2015_BUILTIN)
+#if ENABLED (JERRY_ES2015)
   /* 4, 6 (startsWith, includes, endsWith) */
-  if (mode >= ECMA_STRING_STARTS_WITH
-      && (ecma_is_value_object (arg1)
-      && ecma_object_class_is (ecma_get_object_from_value (arg1), LIT_MAGIC_STRING_REGEXP_UL)))
+  if (mode >= ECMA_STRING_STARTS_WITH)
   {
-    JERRY_ASSERT (ECMA_STRING_LAST_INDEX_OF < mode && mode <= ECMA_STRING_ENDS_WITH);
-    return ecma_raise_type_error (ECMA_ERR_MSG ("Search string can't be of type: RegExp"));
-  }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
+    ecma_value_t regexp = ecma_op_is_regexp (arg1);
 
-  /* 3 */
-  ecma_value_t search_str_val = ecma_op_to_string (arg1);
+    if (ECMA_IS_VALUE_ERROR (regexp))
+    {
+      return regexp;
+    }
 
-  if (ECMA_IS_VALUE_ERROR (search_str_val))
-  {
-    return search_str_val;
+    if (regexp == ECMA_VALUE_TRUE)
+    {
+      JERRY_ASSERT (ECMA_STRING_LAST_INDEX_OF < mode && mode <= ECMA_STRING_ENDS_WITH);
+      return ecma_raise_type_error (ECMA_ERR_MSG ("Search string can't be of type: RegExp"));
+    }
   }
+#endif /* ENABLED (JERRY_ES2015) */
 
   /* 7, 8 */
-  ecma_string_t *search_str_p = ecma_get_string_from_value (search_str_val);
+  ecma_string_t *search_str_p = ecma_op_to_string (arg1);
+
+  if (JERRY_UNLIKELY (search_str_p == NULL))
+  {
+    return ECMA_VALUE_ERROR;
+  }
 
   /* 4 (indexOf, lastIndexOf), 9 (startsWith, includes), 10 (endsWith) */
   ecma_number_t pos_num;
-  ecma_value_t ret_value  = ecma_get_number (arg2, &pos_num);
+  ecma_value_t ret_value;
+#if ENABLED (JERRY_ES2015)
+  if (mode > ECMA_STRING_LAST_INDEX_OF)
+  {
+    ret_value = ecma_op_to_integer (arg2, &pos_num);
+  }
+  else
+  {
+#endif /* ENABLED (JERRY_ES2015) */
+    ret_value = ecma_get_number (arg2, &pos_num);
+#if ENABLED (JERRY_ES2015)
+  }
+#endif /* ENABLED (JERRY_ES2015) */
 
   /* 10 (startsWith, includes), 11 (endsWith) */
   if (ECMA_IS_VALUE_ERROR (ret_value))
@@ -605,7 +584,7 @@ ecma_builtin_helper_string_prototype_object_index_of (ecma_string_t *original_st
 
   switch (mode)
   {
-#if ENABLED (JERRY_ES2015_BUILTIN)
+#if ENABLED (JERRY_ES2015)
     case ECMA_STRING_STARTS_WITH:
     {
       if (pos_num + start > original_len)
@@ -656,7 +635,7 @@ ecma_builtin_helper_string_prototype_object_index_of (ecma_string_t *original_st
       }
       break;
     }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN) */
+#endif /* ENABLED (JERRY_ES2015) */
 
     case ECMA_STRING_INDEX_OF:
     case ECMA_STRING_LAST_INDEX_OF:
@@ -732,7 +711,7 @@ ecma_builtin_helper_string_find_index (ecma_string_t *original_str_p, /**< index
 
       /* iterate original string and try to match at each position */
       bool searching = true;
-      ecma_char_t first_char = lit_utf8_read_next (&search_str_curr_p);
+      ecma_char_t first_char = lit_cesu8_read_next (&search_str_curr_p);
       while (searching)
       {
         /* match as long as possible */
@@ -741,14 +720,14 @@ ecma_builtin_helper_string_find_index (ecma_string_t *original_str_p, /**< index
 
         if (match_len < search_len &&
             index + match_len < original_len &&
-            lit_utf8_read_next (&original_str_curr_p) == first_char)
+            lit_cesu8_read_next (&original_str_curr_p) == first_char)
         {
           const lit_utf8_byte_t *nested_search_str_curr_p = search_str_curr_p;
           match_len++;
 
           while (match_len < search_len &&
                  index + match_len < original_len &&
-                 lit_utf8_read_next (&original_str_curr_p) == lit_utf8_read_next (&nested_search_str_curr_p))
+                 lit_cesu8_read_next (&original_str_curr_p) == lit_cesu8_read_next (&nested_search_str_curr_p))
           {
             match_len++;
           }
@@ -853,6 +832,185 @@ ecma_builtin_helper_def_prop (ecma_object_t *obj_p, /**< object */
                                              index_p,
                                              &prop_desc);
 } /* ecma_builtin_helper_def_prop */
+
+/**
+ * GetSubstitution abstract operation
+ *
+ * See:
+ *     ECMA-262 v6.0 21.1.3.14.1
+ */
+void
+ecma_builtin_replace_substitute (ecma_replace_context_t *ctx_p) /**< replace context */
+{
+  JERRY_ASSERT (ctx_p->string_p != NULL);
+  JERRY_ASSERT (ctx_p->matched_p == NULL
+                || (ctx_p->matched_p >= ctx_p->string_p
+                    && ctx_p->matched_p <= ctx_p->string_p + ctx_p->string_size));
+
+  lit_utf8_size_t replace_size;
+  uint8_t replace_flags = ECMA_STRING_FLAG_IS_ASCII;
+  const lit_utf8_byte_t *replace_buf_p = ecma_string_get_chars (ctx_p->replace_str_p,
+                                                                &replace_size,
+                                                                NULL,
+                                                                NULL,
+                                                                &replace_flags);
+
+  const lit_utf8_byte_t *const replace_end_p = replace_buf_p + replace_size;
+  const lit_utf8_byte_t *curr_p = replace_buf_p;
+  const lit_utf8_byte_t *last_inserted_end_p = replace_buf_p;
+
+  while (curr_p < replace_end_p)
+  {
+    if (*curr_p++ == LIT_CHAR_DOLLAR_SIGN)
+    {
+      ecma_stringbuilder_append_raw (&(ctx_p->builder),
+                                     last_inserted_end_p,
+                                     (lit_utf8_size_t) (curr_p - last_inserted_end_p - 1));
+      if (curr_p >= replace_end_p)
+      {
+        last_inserted_end_p = curr_p - 1;
+        break;
+      }
+
+      const lit_utf8_byte_t c = *curr_p++;
+
+      switch (c)
+      {
+        case LIT_CHAR_DOLLAR_SIGN:
+        {
+          ecma_stringbuilder_append_byte (&(ctx_p->builder), LIT_CHAR_DOLLAR_SIGN);
+          break;
+        }
+        case LIT_CHAR_AMPERSAND:
+        {
+#if ENABLED (JERRY_ES2015)
+          if (JERRY_UNLIKELY (ctx_p->matched_p == NULL))
+          {
+            JERRY_ASSERT (ctx_p->capture_count == 0);
+            JERRY_ASSERT (ctx_p->u.collection_p != NULL);
+            JERRY_ASSERT (ctx_p->u.collection_p->item_count > 0);
+            const ecma_value_t match_value = ctx_p->u.collection_p->buffer_p[0];
+
+            JERRY_ASSERT (ecma_is_value_string (match_value));
+            ecma_stringbuilder_append (&(ctx_p->builder), ecma_get_string_from_value (match_value));
+            break;
+          }
+#endif /* ENABLED (JERRY_ES2015) */
+
+          JERRY_ASSERT (ctx_p->matched_p != NULL);
+          ecma_stringbuilder_append_raw (&(ctx_p->builder), ctx_p->matched_p, ctx_p->matched_size);
+          break;
+        }
+        case LIT_CHAR_GRAVE_ACCENT:
+        {
+          ecma_stringbuilder_append_raw (&(ctx_p->builder), ctx_p->string_p, ctx_p->match_byte_pos);
+          break;
+        }
+        case LIT_CHAR_SINGLE_QUOTE:
+        {
+#if ENABLED (JERRY_ES2015)
+          if (JERRY_UNLIKELY (ctx_p->matched_p == NULL))
+          {
+            JERRY_ASSERT (ctx_p->capture_count == 0);
+            JERRY_ASSERT (ctx_p->u.collection_p != NULL);
+            JERRY_ASSERT (ctx_p->u.collection_p->item_count > 0);
+            const ecma_value_t match_value = ctx_p->u.collection_p->buffer_p[0];
+
+            JERRY_ASSERT (ecma_is_value_string (match_value));
+            const ecma_string_t *const matched_p = ecma_get_string_from_value (match_value);
+            const lit_utf8_size_t match_size = ecma_string_get_size (matched_p);
+            const lit_utf8_byte_t *const begin_p = ctx_p->string_p + ctx_p->match_byte_pos + match_size;
+
+            ecma_stringbuilder_append_raw (&(ctx_p->builder),
+                                           begin_p,
+                                           (lit_utf8_size_t) (ctx_p->string_p + ctx_p->string_size - begin_p));
+            break;
+          }
+#endif /* ENABLED (JERRY_ES2015) */
+
+          JERRY_ASSERT (ctx_p->matched_p != NULL);
+          ecma_stringbuilder_append_raw (&(ctx_p->builder),
+                                         ctx_p->matched_p + ctx_p->matched_size,
+                                         ctx_p->string_size - ctx_p->match_byte_pos - ctx_p->matched_size);
+          break;
+        }
+        default:
+        {
+          const lit_utf8_byte_t *const number_begin_p = curr_p - 1;
+
+          if (lit_char_is_decimal_digit (c))
+          {
+            uint32_t capture_count = ctx_p->capture_count;
+#if ENABLED (JERRY_ES2015)
+            if (capture_count == 0 && ctx_p->u.collection_p != NULL)
+            {
+              capture_count = ctx_p->u.collection_p->item_count;
+            }
+#endif /* ENABLED (JERRY_ES2015) */
+
+            uint8_t idx = (uint8_t) (c - LIT_CHAR_0);
+            if (curr_p < replace_end_p && lit_char_is_decimal_digit (*(curr_p)))
+            {
+              uint8_t two_digit_index = (uint8_t) (idx * 10 + (uint8_t) (*(curr_p) - LIT_CHAR_0));
+              if (two_digit_index < capture_count)
+              {
+                idx = two_digit_index;
+                curr_p++;
+              }
+            }
+
+            if (idx > 0 && idx < capture_count)
+            {
+              if (ctx_p->capture_count > 0)
+              {
+#if ENABLED (JERRY_BUILTIN_REGEXP)
+                JERRY_ASSERT (ctx_p->u.captures_p != NULL);
+                const ecma_regexp_capture_t *const capture_p = ctx_p->u.captures_p + idx;
+
+                if (ECMA_RE_IS_CAPTURE_DEFINED (capture_p))
+                {
+                  ecma_stringbuilder_append_raw (&(ctx_p->builder),
+                                                 capture_p->begin_p,
+                                                 (lit_utf8_size_t) (capture_p->end_p - capture_p->begin_p));
+                }
+
+                break;
+#endif /* ENABLED (JERRY_BUILTIN_REGEXP) */
+              }
+#if ENABLED (JERRY_ES2015)
+              else if (ctx_p->u.collection_p != NULL)
+              {
+                const ecma_value_t capture_value = ctx_p->u.collection_p->buffer_p[idx];
+                if (!ecma_is_value_undefined (capture_value))
+                {
+                  ecma_stringbuilder_append (&(ctx_p->builder), ecma_get_string_from_value (capture_value));
+                }
+
+                break;
+              }
+#endif /* ENABLED (JERRY_ES2015) */
+            }
+          }
+
+          ecma_stringbuilder_append_byte (&(ctx_p->builder), LIT_CHAR_DOLLAR_SIGN);
+          curr_p = number_begin_p;
+          break;
+        }
+      }
+
+      last_inserted_end_p = curr_p;
+    }
+  }
+
+  ecma_stringbuilder_append_raw (&(ctx_p->builder),
+                                 last_inserted_end_p,
+                                 (lit_utf8_size_t) (replace_end_p - last_inserted_end_p));
+
+  if (replace_flags & ECMA_STRING_FLAG_MUST_BE_FREED)
+  {
+    jmem_heap_free_block ((void *) replace_buf_p, replace_size);
+  }
+} /* ecma_builtin_replace_substitute */
 
 /**
  * @}

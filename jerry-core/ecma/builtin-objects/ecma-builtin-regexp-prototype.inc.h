@@ -46,6 +46,19 @@ ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_IGNORECASE_UL,
 ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_MULTILINE,
                     ecma_builtin_regexp_prototype_get_multiline,
                     ECMA_PROPERTY_FIXED)
+
+ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_UNICODE,
+                    ecma_builtin_regexp_prototype_get_unicode,
+                    ECMA_PROPERTY_FIXED)
+
+ACCESSOR_READ_ONLY (LIT_MAGIC_STRING_STICKY,
+                    ecma_builtin_regexp_prototype_get_sticky,
+                    ECMA_PROPERTY_FIXED)
+
+ROUTINE (LIT_GLOBAL_SYMBOL_REPLACE, ecma_builtin_regexp_prototype_symbol_replace, 2, 2)
+ROUTINE (LIT_GLOBAL_SYMBOL_SEARCH, ecma_builtin_regexp_prototype_symbol_search, 1, 1)
+ROUTINE (LIT_GLOBAL_SYMBOL_SPLIT, ecma_builtin_regexp_prototype_symbol_split, 2, 2)
+ROUTINE (LIT_GLOBAL_SYMBOL_MATCH, ecma_builtin_regexp_prototype_symbol_match, 1, 1)
 #else /* !ENABLED (JERRY_ES2015) */
 /* ECMA-262 v5, 15.10.7.1 */
 STRING_VALUE (LIT_MAGIC_STRING_SOURCE,

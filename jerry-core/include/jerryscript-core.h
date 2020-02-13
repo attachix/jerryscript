@@ -39,7 +39,7 @@ extern "C"
 /**
  * Minor version of JerryScript API.
  */
-#define JERRY_API_MINOR_VERSION 1
+#define JERRY_API_MINOR_VERSION 2
 
 /**
  * Patch version of JerryScript API.
@@ -327,6 +327,11 @@ typedef enum
   JERRY_BIN_OP_GREATER,       /**< greater relation (>) */
   JERRY_BIN_OP_GREATER_EQUAL, /**< greater or equal relation (>=)*/
   JERRY_BIN_OP_INSTANCEOF,    /**< instanceof operation */
+  JERRY_BIN_OP_ADD,           /**< addition operator (+) */
+  JERRY_BIN_OP_SUB,           /**< subtraction operator (-) */
+  JERRY_BIN_OP_MUL,           /**< multiplication operator (*) */
+  JERRY_BIN_OP_DIV,           /**< division operator (/) */
+  JERRY_BIN_OP_REM,           /**< remainder operator (%) */
 } jerry_binary_operation_t;
 
 /**
@@ -555,9 +560,23 @@ bool jerry_foreach_object_property (const jerry_value_t obj_val, jerry_object_pr
                                     void *user_data_p);
 
 /**
- * Promise resolve/reject functions.
+ * Promise functions.
  */
 jerry_value_t jerry_resolve_or_reject_promise (jerry_value_t promise, jerry_value_t argument, bool is_resolve);
+
+/**
+ * Enum values representing various Promise states.
+ */
+typedef enum
+{
+  JERRY_PROMISE_STATE_NONE = 0u, /**< Invalid/Unknown state (possibly called on a non-promise object). */
+  JERRY_PROMISE_STATE_PENDING,   /**< Promise is in "Pending" state. */
+  JERRY_PROMISE_STATE_FULFILLED, /**< Promise is in "Fulfilled" state. */
+  JERRY_PROMISE_STATE_REJECTED,  /**< Promise is in "Rejected" state. */
+} jerry_promise_state_t;
+
+jerry_value_t jerry_get_promise_result (const jerry_value_t promise);
+jerry_promise_state_t jerry_get_promise_state (const jerry_value_t promise);
 
 /**
  * Symbol functions.
@@ -586,6 +605,8 @@ jerry_context_t *jerry_create_context (uint32_t heap_size, jerry_context_alloc_t
  */
 void jerry_set_vm_exec_stop_callback (jerry_vm_exec_stop_callback_t stop_cb, void *user_p, uint32_t frequency);
 jerry_value_t jerry_get_backtrace (uint32_t max_depth);
+jerry_value_t jerry_get_resource_name (const jerry_value_t value);
+jerry_value_t jerry_get_new_target (void);
 
 /**
  * Array buffer components.
@@ -644,7 +665,6 @@ typedef enum
   JERRY_TYPEDARRAY_FLOAT32,
   JERRY_TYPEDARRAY_FLOAT64,
 } jerry_typedarray_type_t;
-
 
 bool jerry_value_is_typedarray (jerry_value_t value);
 jerry_value_t jerry_create_typedarray (jerry_typedarray_type_t type_name, jerry_length_t length);

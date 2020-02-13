@@ -77,6 +77,34 @@ parser_module_check_duplicate_import (parser_context_t *context_p, /**< parser c
 } /* parser_module_check_duplicate_import */
 
 /**
+ * Append an identifier to the exported bindings.
+ */
+void
+parser_module_append_export_name (parser_context_t *context_p) /**< parser context */
+{
+  if (!(context_p->status_flags & PARSER_MODULE_STORE_IDENT))
+  {
+    return;
+  }
+
+  context_p->module_identifier_lit_p = context_p->lit_object.literal_p;
+
+  ecma_string_t *name_p = ecma_new_ecma_string_from_utf8 (context_p->lit_object.literal_p->u.char_p,
+                                                          context_p->lit_object.literal_p->prop.length);
+
+  if (parser_module_check_duplicate_export (context_p, name_p))
+  {
+    ecma_deref_ecma_string (name_p);
+    parser_raise_error (context_p, PARSER_ERR_DUPLICATED_EXPORT_IDENTIFIER);
+  }
+
+  parser_module_add_names_to_node (context_p,
+                                   name_p,
+                                   name_p);
+  ecma_deref_ecma_string (name_p);
+} /* parser_module_append_export_name */
+
+/**
  * Check for duplicated exported bindings.
  * @return - true - if the exported name is a duplicate
  *           false - otherwise
@@ -339,7 +367,7 @@ parser_module_parse_export_clause (parser_context_t *context_p) /**< parser cont
     /* 15.2.3.1 The referenced binding cannot be a reserved word. */
     if (context_p->token.type != LEXER_LITERAL
         || context_p->token.lit_location.type != LEXER_IDENT_LITERAL
-        || context_p->token.literal_is_reserved)
+        || context_p->token.keyword_type >= LEXER_FIRST_FUTURE_STRICT_RESERVED_WORD)
     {
       parser_raise_error (context_p, PARSER_ERR_IDENTIFIER_EXPECTED);
     }
@@ -347,13 +375,13 @@ parser_module_parse_export_clause (parser_context_t *context_p) /**< parser cont
     ecma_string_t *export_name_p = NULL;
     ecma_string_t *local_name_p = NULL;
 
-    lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_IDENT_LITERAL);
+    lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_NEW_IDENT_LITERAL);
 
     uint16_t local_name_index = context_p->lit_object.index;
     uint16_t export_name_index = PARSER_MAXIMUM_NUMBER_OF_LITERALS;
 
     lexer_next_token (context_p);
-    if (lexer_compare_literal_to_identifier (context_p, "as", 2))
+    if (lexer_token_is_identifier (context_p, "as", 2))
     {
       lexer_next_token (context_p);
 
@@ -363,7 +391,7 @@ parser_module_parse_export_clause (parser_context_t *context_p) /**< parser cont
         parser_raise_error (context_p, PARSER_ERR_IDENTIFIER_EXPECTED);
       }
 
-      lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_IDENT_LITERAL);
+      lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_NEW_IDENT_LITERAL);
 
       export_name_index = context_p->lit_object.index;
 
@@ -405,7 +433,7 @@ parser_module_parse_export_clause (parser_context_t *context_p) /**< parser cont
       lexer_next_token (context_p);
     }
 
-    if (lexer_compare_literal_to_identifier (context_p, "from", 4))
+    if (lexer_token_is_identifier (context_p, "from", 4))
     {
       parser_raise_error (context_p, PARSER_ERR_RIGHT_BRACE_EXPECTED);
     }
@@ -435,16 +463,24 @@ parser_module_parse_import_clause (parser_context_t *context_p) /**< parser cont
       parser_raise_error (context_p, PARSER_ERR_IDENTIFIER_EXPECTED);
     }
 
+#if ENABLED (JERRY_ES2015)
+    if (context_p->next_scanner_info_p->source_p == context_p->source_p)
+    {
+      JERRY_ASSERT (context_p->next_scanner_info_p->type == SCANNER_TYPE_ERR_REDECLARED);
+      parser_raise_error (context_p, PARSER_ERR_VARIABLE_REDECLARED);
+    }
+#endif /* ENABLED (JERRY_ES2015) */
+
     ecma_string_t *import_name_p = NULL;
     ecma_string_t *local_name_p = NULL;
 
-    lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_IDENT_LITERAL);
+    lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_NEW_IDENT_LITERAL);
 
     uint16_t import_name_index = context_p->lit_object.index;
     uint16_t local_name_index = PARSER_MAXIMUM_NUMBER_OF_LITERALS;
 
     lexer_next_token (context_p);
-    if (lexer_compare_literal_to_identifier (context_p, "as", 2))
+    if (lexer_token_is_identifier (context_p, "as", 2))
     {
       lexer_next_token (context_p);
 
@@ -454,7 +490,15 @@ parser_module_parse_import_clause (parser_context_t *context_p) /**< parser cont
         parser_raise_error (context_p, PARSER_ERR_IDENTIFIER_EXPECTED);
       }
 
-      lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_IDENT_LITERAL);
+#if ENABLED (JERRY_ES2015)
+      if (context_p->next_scanner_info_p->source_p == context_p->source_p)
+      {
+        JERRY_ASSERT (context_p->next_scanner_info_p->type == SCANNER_TYPE_ERR_REDECLARED);
+        parser_raise_error (context_p, PARSER_ERR_VARIABLE_REDECLARED);
+      }
+#endif /* ENABLED (JERRY_ES2015) */
+
+      lexer_construct_literal_object (context_p, &context_p->token.lit_location, LEXER_NEW_IDENT_LITERAL);
 
       local_name_index = context_p->lit_object.index;
 
@@ -496,7 +540,7 @@ parser_module_parse_import_clause (parser_context_t *context_p) /**< parser cont
       lexer_next_token (context_p);
     }
 
-    if (lexer_compare_literal_to_identifier (context_p, "from", 4))
+    if (lexer_token_is_identifier (context_p, "from", 4))
     {
       parser_raise_error (context_p, PARSER_ERR_RIGHT_BRACE_EXPECTED);
     }

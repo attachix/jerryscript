@@ -18,6 +18,8 @@
 
 #include "ecma-globals.h"
 #include "ecma-exceptions.h"
+#include "ecma-helpers.h"
+#include "ecma-regexp-object.h"
 
 /** \addtogroup ecma ECMA
  * @{
@@ -32,8 +34,8 @@
 typedef enum
 {
   /** These routines must be in this order */
-  ECMA_STRING_INDEX_OF, /**< String.indexOf: ECMA-262 v5, 15.5.4.7 */
   ECMA_STRING_LAST_INDEX_OF, /**< String.lastIndexOf: ECMA-262 v5, 15.5.4.8 */
+  ECMA_STRING_INDEX_OF, /**< String.indexOf: ECMA-262 v5, 15.5.4.7 */
   ECMA_STRING_STARTS_WITH, /**< String.startsWith: ECMA-262 v6, 21.1.3.18 */
   ECMA_STRING_INCLUDES, /**< String.includes: ECMA-262 v6, 21.1.3.7 */
   ECMA_STRING_ENDS_WITH /**< String.includes: ECMA-262 v6, 21.1.3.6 */
@@ -41,14 +43,14 @@ typedef enum
 
 ecma_value_t
 ecma_builtin_helper_object_to_string (const ecma_value_t this_arg);
-ecma_value_t
+ecma_string_t *
 ecma_builtin_helper_get_to_locale_string_at_index (ecma_object_t *obj_p, uint32_t index);
 ecma_value_t
 ecma_builtin_helper_object_get_properties (ecma_object_t *obj_p, uint32_t opts);
 ecma_value_t
 ecma_builtin_helper_array_concat_value (ecma_object_t *obj_p, uint32_t *length_p, ecma_value_t value);
 uint32_t
-ecma_builtin_helper_array_index_normalize (ecma_number_t index, uint32_t length, bool last_index_of);
+ecma_builtin_helper_array_index_normalize (ecma_value_t arg, uint32_t length, uint32_t *number_p);
 uint32_t
 ecma_builtin_helper_string_index_normalize (ecma_number_t index, uint32_t length, bool nan_to_zero);
 ecma_value_t
@@ -62,6 +64,42 @@ ecma_builtin_helper_def_prop (ecma_object_t *obj_p, ecma_string_t *index_p, ecma
 
 ecma_value_t
 ecma_builtin_helper_def_prop_by_index (ecma_object_t *obj_p, uint32_t index, ecma_value_t value, uint32_t opts);
+
+/**
+ * Context for replace substitutions
+ */
+typedef struct
+{
+  ecma_stringbuilder_t builder;      /**< result string builder */
+  const lit_utf8_byte_t *string_p;   /**< source string */
+  lit_utf8_size_t string_size;       /**< source string size */
+  const lit_utf8_byte_t *matched_p;  /**< matched string */
+  lit_utf8_size_t matched_size;      /**< matcehd string size */
+  lit_utf8_size_t match_byte_pos;    /**< byte position of the match in the source string */
+  ecma_length_t index;               /**< current match index */
+
+  /**
+   * Capture results
+   */
+  union
+  {
+#if ENABLED (JERRY_BUILTIN_REGEXP)
+    const ecma_regexp_capture_t *captures_p; /**< array of regexp capturing groups */
+#endif /* ENABLED (JERRY_BUILTIN_REGEXP) */
+    const ecma_collection_t *collection_p;   /**< collection of captured substrings */
+  } u;
+
+  uint32_t capture_count;            /**< number of captures in the capturing group array */
+  ecma_string_t *replace_str_p;      /**< replacement string */
+} ecma_replace_context_t;
+
+void
+ecma_builtin_replace_substitute (ecma_replace_context_t *ctx_p);
+
+#if ENABLED (JERRY_ES2015)
+bool
+ecma_builtin_is_regexp_exec (ecma_extended_object_t *obj_p);
+#endif /* ENABLED (JERRY_ES2015) */
 
 #if ENABLED (JERRY_BUILTIN_DATE)
 
@@ -109,6 +147,9 @@ typedef enum
 } ecma_date_timezone_t;
 
 /* ecma-builtin-helpers-date.c */
+extern const char day_names_p[7][3];
+extern const char month_names_p[12][3];
+
 ecma_number_t ecma_date_day (ecma_number_t time);
 ecma_number_t ecma_date_time_within_day (ecma_number_t time);
 ecma_number_t ecma_date_year_from_time (ecma_number_t time);

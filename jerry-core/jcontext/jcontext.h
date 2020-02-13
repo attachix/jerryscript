@@ -21,6 +21,7 @@
 
 #include "debugger.h"
 #include "ecma-builtins.h"
+#include "ecma-helpers.h"
 #include "ecma-jobqueue.h"
 #include "jerryscript-port.h"
 #include "jmem.h"
@@ -137,9 +138,9 @@ struct jerry_context_t
   const lit_utf8_byte_t * const *lit_magic_string_ex_array; /**< array of external magic strings */
   const lit_utf8_size_t *lit_magic_string_ex_sizes; /**< external magic string lengths */
   jmem_cpointer_t string_list_first_cp; /**< first item of the literal string list */
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
   jmem_cpointer_t symbol_list_first_cp; /**< first item of the global symbol list */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
   jmem_cpointer_t number_list_first_cp; /**< first item of the literal number list */
   jmem_cpointer_t ecma_global_lex_env_cp; /**< global lexical environment */
 
@@ -159,6 +160,9 @@ struct jerry_context_t
   uint32_t lit_magic_string_ex_count; /**< external magic strings count */
   uint32_t jerry_init_flags; /**< run-time configuration flags */
   uint32_t status_flags; /**< run-time flags (the top 8 bits are used for passing class parsing options) */
+#if (JERRY_GC_MARK_LIMIT != 0)
+  uint32_t ecma_gc_mark_recursion_limit; /**< GC mark recursion limit */
+#endif /* (JERRY_GC_MARK_LIMIT != 0) */
 
 #if ENABLED (JERRY_PROPRETY_HASHMAP)
   uint8_t ecma_prop_hashmap_alloc_state; /**< property hashmap allocation state: 0-4,
@@ -192,8 +196,8 @@ struct jerry_context_t
   jerry_debugger_transport_header_t *debugger_transport_header_p; /**< head of transport protocol chain */
   uint8_t *debugger_send_buffer_payload_p; /**< start where the outgoing message can be written */
   vm_frame_ctx_t *debugger_stop_context; /**< stop only if the current context is equal to this context */
-  uint8_t *debugger_exception_byte_code_p; /**< Location of the currently executed byte code if an
-                                            *   error occours while the vm_loop is suspended */
+  const uint8_t *debugger_exception_byte_code_p; /**< Location of the currently executed byte code if an
+                                                  *   error occours while the vm_loop is suspended */
   jmem_cpointer_t debugger_byte_code_free_head; /**< head of byte code free linked list */
   jmem_cpointer_t debugger_byte_code_free_tail; /**< tail of byte code free linked list */
   uint32_t debugger_flags; /**< debugger flags */
@@ -216,8 +220,24 @@ struct jerry_context_t
   /** hash table for caching the last access of properties */
   ecma_lcache_hash_entry_t lcache[ECMA_LCACHE_HASH_ROWS_COUNT][ECMA_LCACHE_HASH_ROW_LENGTH];
 #endif /* ENABLED (JERRY_LCACHE) */
+
+#if ENABLED (JERRY_ES2015)
+  /**
+   * Allowed values and it's meaning:
+   * * NULL (0x0): the current "new.target" is undefined, that is the execution is inside a normal method.
+   * * JERRY_CONTEXT_INVALID_NEW_TARGET (0x1): the current "new.target" is invalid, that is outside of a method.
+   * * Any other valid function object pointer: the current "new.target" is valid and it is constructor call.
+   */
+  ecma_object_t *current_new_target;
+  ecma_object_t *current_function_obj_p; /** currently invoked function object
+                                             (Note: currently used only in generator functions) */
+#endif /* ENABLED (JERRY_ES2015) */
 };
 
+/**
+ * Magic constant used to indicate that the current "new.target" is not inside a function.
+ */
+#define JERRY_CONTEXT_INVALID_NEW_TARGET ((ecma_object_t *) 0x1)
 
 #if ENABLED (JERRY_EXTERNAL_CONTEXT)
 
@@ -225,6 +245,7 @@ struct jerry_context_t
  * This part is for JerryScript which uses external context.
  */
 
+#define JERRY_CONTEXT_STRUCT (*jerry_port_get_current_context ())
 #define JERRY_CONTEXT(field) (jerry_port_get_current_context ()->field)
 
 #if !ENABLED (JERRY_SYSTEM_ALLOCATOR)
@@ -253,6 +274,11 @@ struct jmem_heap_t
  * Global context.
  */
 extern jerry_context_t jerry_global_context;
+
+/**
+ * Config-independent name for context.
+ */
+#define JERRY_CONTEXT_STRUCT (jerry_global_context)
 
 /**
  * Provides a reference to a field in the current context.
@@ -290,6 +316,27 @@ extern jmem_heap_t jerry_global_heap;
 #endif /* !ENABLED (JERRY_SYSTEM_ALLOCATOR) */
 
 #endif /* ENABLED (JERRY_EXTERNAL_CONTEXT) */
+
+void
+jcontext_set_exception_flag (bool is_exception);
+
+void
+jcontext_set_abort_flag (bool is_abort);
+
+bool
+jcontext_has_pending_exception (void);
+
+bool
+jcontext_has_pending_abort (void);
+
+void
+jcontext_raise_exception (ecma_value_t error);
+
+void
+jcontext_release_exception (void);
+
+ecma_value_t
+jcontext_take_exception (void);
 
 /**
  * @}

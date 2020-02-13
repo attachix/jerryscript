@@ -25,7 +25,7 @@
  * @{
  */
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
 /**
  * Free symbol list
  */
@@ -53,7 +53,7 @@ ecma_free_symbol_list (jmem_cpointer_t symbol_list_cp) /**< symbol list */
     symbol_list_cp = next_item_cp;
   }
 } /* ecma_free_symbol_list */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
 /**
  * Free string list
@@ -115,9 +115,9 @@ ecma_free_number_list (jmem_cpointer_t number_list_cp) /**< string list */
 void
 ecma_finalize_lit_storage (void)
 {
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
   ecma_free_symbol_list (JERRY_CONTEXT (symbol_list_first_cp));
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
   ecma_free_string_list (JERRY_CONTEXT (string_list_first_cp));
   ecma_free_number_list (JERRY_CONTEXT (number_list_first_cp));
 } /* ecma_finalize_lit_storage */
@@ -346,7 +346,7 @@ ecma_save_literals_add_compiled_code (const ecma_compiled_code_t *compiled_code_
     const_literal_end = args_p->const_literal_end - register_end;
     literal_end = args_p->literal_end - register_end;
 
-    if (CBC_NON_STRICT_ARGUMENTS_NEEDED (compiled_code_p))
+    if (compiled_code_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
     {
       argument_end = args_p->argument_end;
     }
@@ -361,7 +361,7 @@ ecma_save_literals_add_compiled_code (const ecma_compiled_code_t *compiled_code_
     const_literal_end = args_p->const_literal_end - register_end;
     literal_end = args_p->literal_end - register_end;
 
-    if (CBC_NON_STRICT_ARGUMENTS_NEEDED (compiled_code_p))
+    if (compiled_code_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
     {
       argument_end = args_p->argument_end;
     }

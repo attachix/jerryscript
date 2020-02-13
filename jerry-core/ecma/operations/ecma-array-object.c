@@ -15,6 +15,7 @@
 
 #include "ecma-alloc.h"
 #include "ecma-array-object.h"
+#include "ecma-iterator-object.h"
 #include "ecma-builtin-helpers.h"
 #include "ecma-builtins.h"
 #include "ecma-exceptions.h"
@@ -33,6 +34,32 @@
  * \addtogroup ecmaarrayobject ECMA Array object related routines
  * @{
  */
+
+#if ENABLED (JERRY_CPOINTER_32_BIT)
+/**
+ * Maximum length of the array length to allocate fast mode access for it
+ * e.g. new Array(5000) is constructed as fast mode access array,
+ * but new Array(50000000) is consturcted as normal property list based array
+ */
+#define ECMA_FAST_ARRAY_MAX_INITIAL_LENGTH (1 << 17)
+#else /* ENABLED (JERRY_CPOINTER_32_BIT) */
+/**
+ * Maximum length of the array length to allocate fast mode access for it
+ * e.g. new Array(5000) is constructed as fast mode access array,
+ * but new Array(50000000) is consturcted as normal property list based array
+ */
+#define ECMA_FAST_ARRAY_MAX_INITIAL_LENGTH (1 << 13)
+#endif /* ENABLED (JERRY_CPOINTER_32_BIT) */
+
+/**
+ * Property name type flag for array indices.
+ */
+#define ECMA_FAST_ARRAY_UINT32_DIRECT_STRING_PROP_TYPE 0x80
+
+/**
+ * Property attribute for the array 'length' virtual property to indicate fast access mode array
+ */
+#define ECMA_FAST_ARRAY_FLAG (ECMA_DIRECT_STRING_MAGIC << ECMA_PROPERTY_NAME_TYPE_SHIFT)
 
 /**
  * Allocate a new array object with the given length
@@ -60,12 +87,38 @@ ecma_op_new_array_object (ecma_length_t length) /**< length of the new array */
 
   ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
   ext_obj_p->u.array.length = length;
-  ext_obj_p->u.array.length_prop = ECMA_PROPERTY_FLAG_WRITABLE | ECMA_PROPERTY_TYPE_VIRTUAL;
-  ext_obj_p->u.array.is_fast_mode = false;
-  ext_obj_p->u.array.hole_count = 0;
+  ext_obj_p->u.array.u.hole_count = 0;
+  ext_obj_p->u.array.u.length_prop = ECMA_PROPERTY_FLAG_WRITABLE | ECMA_PROPERTY_TYPE_VIRTUAL;
 
   return object_p;
 } /* ecma_op_new_array_object */
+
+/**
+ * Check whether the given object is fast-access mode array
+ *
+ * @return true - if the object is fast-access mode array
+ *         false, otherwise
+ */
+inline bool JERRY_ATTR_ALWAYS_INLINE
+ecma_op_object_is_fast_array (ecma_object_t *object_p) /**< ecma-object */
+{
+  return (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_ARRAY &&
+          ecma_op_array_is_fast_array ((ecma_extended_object_t *) object_p));
+} /* ecma_op_object_is_fast_array */
+
+/**
+ * Check whether the given array object is fast-access mode array
+ *
+ * @return true - if the array object is fast-access mode array
+ *         false, otherwise
+ */
+inline bool JERRY_ATTR_ALWAYS_INLINE
+ecma_op_array_is_fast_array (ecma_extended_object_t *array_p) /**< ecma-array-object */
+{
+  JERRY_ASSERT (ecma_get_object_type ((ecma_object_t *) array_p) == ECMA_OBJECT_TYPE_ARRAY);
+
+  return array_p->u.array.u.length_prop & ECMA_FAST_ARRAY_FLAG;
+} /* ecma_op_array_is_fast_array */
 
 /**
  * Allocate a new fast access mode array object with the given length
@@ -90,9 +143,10 @@ ecma_op_new_fast_array_object (ecma_length_t length) /**< length of the new fast
   }
 
   ecma_object_t *object_p = ecma_op_new_array_object (length);
-
   ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
-  ext_obj_p->u.array.is_fast_mode = true;
+
+  ext_obj_p->u.array.u.length_prop = (uint8_t) (ext_obj_p->u.array.u.length_prop | ECMA_FAST_ARRAY_FLAG);
+  ext_obj_p->u.array.u.hole_count += length * ECMA_FAST_ARRAY_HOLE_ONE;
 
   JERRY_ASSERT (object_p->u1.property_list_cp == JMEM_CP_NULL);
 
@@ -106,40 +160,24 @@ ecma_op_new_fast_array_object (ecma_length_t length) /**< length of the new fast
 } /* ecma_op_new_fast_array_object */
 
 /**
- * Property name type flag for array indices.
- */
-#define ECMA_FAST_ARRAY_UINT32_DIRECT_STRING_PROP_TYPE 0x80
-
-/**
  * Converts a fast access mode array back to a normal property list based array
  */
 void
 ecma_fast_array_convert_to_normal (ecma_object_t *object_p) /**< fast access mode array object */
 {
-  JERRY_ASSERT (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_ARRAY);
+  JERRY_ASSERT (ecma_op_object_is_fast_array (object_p));
 
   ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
 
-  JERRY_ASSERT (ext_obj_p->u.array.is_fast_mode);
-
   if (object_p->u1.property_list_cp == JMEM_CP_NULL)
   {
-    ext_obj_p->u.array.is_fast_mode = false;
+    ext_obj_p->u.array.u.length_prop = (uint8_t) (ext_obj_p->u.array.u.length_prop & ~ECMA_FAST_ARRAY_FLAG);
     return;
   }
 
   uint32_t length = ext_obj_p->u.array.length;
   const uint32_t aligned_length = ECMA_FAST_ARRAY_ALIGN_LENGTH (length);
   ecma_value_t *values_p = ECMA_GET_NON_NULL_POINTER (ecma_value_t, object_p->u1.property_list_cp);
-
-  /* Check whether the buffer contains only array holes */
-  if (JERRY_UNLIKELY (ext_obj_p->u.array.length == ext_obj_p->u.array.hole_count))
-  {
-    ext_obj_p->u.array.is_fast_mode = false;
-    jmem_heap_free_block (values_p, aligned_length * sizeof (ecma_value_t));
-    object_p->u1.property_list_cp = JMEM_CP_NULL;
-    return;
-  }
 
   ecma_ref_object (object_p);
 
@@ -179,28 +217,12 @@ ecma_fast_array_convert_to_normal (ecma_object_t *object_p) /**< fast access mod
     prop_index = !prop_index;
   }
 
-  ext_obj_p->u.array.is_fast_mode = false;
+  ext_obj_p->u.array.u.length_prop = (uint8_t) (ext_obj_p->u.array.u.length_prop & ~ECMA_FAST_ARRAY_FLAG);
   jmem_heap_free_block (values_p, aligned_length * sizeof (ecma_value_t));
   ECMA_SET_POINTER (object_p->u1.property_list_cp, property_pair_p);
 
   ecma_deref_object (object_p);
 } /* ecma_fast_array_convert_to_normal */
-
-#if ENABLED (JERRY_SYSTEM_ALLOCATOR)
-/**
- * Maximum length of the array length to allocate fast mode access for it
- * e.g. new Array(5000) is constructed as fast mode access array,
- * but new Array(50000000) is consturcted as normal property list based array
- */
-#define ECMA_FAST_ARRAY_MAX_INITIAL_LENGTH (1 << 17)
-#else
-/**
- * Maximum length of the array length to allocate fast mode access for it
- * e.g. new Array(5000) is constructed as fast mode access array,
- * but new Array(50000000) is consturcted as normal property list based array
- */
-#define ECMA_FAST_ARRAY_MAX_INITIAL_LENGTH (1 << 13)
-#endif
 
 /**
  * [[Put]] operation for a fast access mode array
@@ -215,13 +237,13 @@ ecma_fast_array_set_property (ecma_object_t *object_p, /**< fast access mode arr
                               uint32_t index, /**< property name index */
                               ecma_value_t value) /**< value to be set */
 {
-  JERRY_ASSERT (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_ARRAY);
+  JERRY_ASSERT (ecma_op_object_is_fast_array (object_p));
   ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
-  JERRY_ASSERT (ext_obj_p->u.array.is_fast_mode);
+  uint32_t old_length = ext_obj_p->u.array.length;
 
   ecma_value_t *values_p;
 
-  if (JERRY_LIKELY (index < ext_obj_p->u.array.length))
+  if (JERRY_LIKELY (index < old_length))
   {
     JERRY_ASSERT (object_p->u1.property_list_cp != JMEM_CP_NULL);
 
@@ -229,7 +251,7 @@ ecma_fast_array_set_property (ecma_object_t *object_p, /**< fast access mode arr
 
     if (ecma_is_value_array_hole (values_p[index]))
     {
-      ext_obj_p->u.array.hole_count = (uint8_t) JERRY_MAX (ext_obj_p->u.array.hole_count - 1, 0);
+      ext_obj_p->u.array.u.hole_count -= ECMA_FAST_ARRAY_HOLE_ONE;
     }
     else
     {
@@ -241,9 +263,20 @@ ecma_fast_array_set_property (ecma_object_t *object_p, /**< fast access mode arr
     return true;
   }
 
-  uint32_t new_holes = index - ext_obj_p->u.array.length;
-  uint32_t old_length = ext_obj_p->u.array.length;
+  uint32_t old_holes = ext_obj_p->u.array.u.hole_count;
+  uint32_t new_holes = index - old_length;
+
+  if (JERRY_UNLIKELY (new_holes > ECMA_FAST_ARRAY_MAX_NEW_HOLES_COUNT
+                      || ((old_holes >> ECMA_FAST_ARRAY_HOLE_SHIFT) + new_holes) > ECMA_FAST_ARRAY_MAX_HOLE_COUNT))
+  {
+    ecma_fast_array_convert_to_normal (object_p);
+
+    return false;
+  }
+
   uint32_t new_length = index + 1;
+
+  JERRY_ASSERT (new_length < UINT32_MAX);
 
   const uint32_t aligned_length = ECMA_FAST_ARRAY_ALIGN_LENGTH (old_length);
 
@@ -252,24 +285,15 @@ ecma_fast_array_set_property (ecma_object_t *object_p, /**< fast access mode arr
     JERRY_ASSERT (object_p->u1.property_list_cp != JMEM_CP_NULL);
 
     values_p = ECMA_GET_NON_NULL_POINTER (ecma_value_t, object_p->u1.property_list_cp);
+    /* This area is filled with ECMA_VALUE_ARRAY_HOLE, but not counted in u.array.u.hole_count */
     JERRY_ASSERT (ecma_is_value_array_hole (values_p[index]));
+    ext_obj_p->u.array.u.hole_count += new_holes * ECMA_FAST_ARRAY_HOLE_ONE;
     ext_obj_p->u.array.length = new_length;
-    ext_obj_p->u.array.hole_count = (uint8_t) JERRY_MIN (ext_obj_p->u.array.hole_count + new_holes,
-                                                         ECMA_FAST_ARRAY_MAX_HOLE_COUNT);
   }
   else
   {
-    JERRY_ASSERT (ext_obj_p->u.array.hole_count <= ECMA_FAST_ARRAY_MAX_HOLE_COUNT);
-
-    if (new_holes > (uint32_t) (ECMA_FAST_ARRAY_MAX_HOLE_COUNT - ext_obj_p->u.array.hole_count))
-    {
-      ecma_fast_array_convert_to_normal (object_p);
-
-      return false;
-    }
-
     values_p = ecma_fast_array_extend (object_p, new_length);
-    ext_obj_p->u.array.hole_count = (uint8_t) (ext_obj_p->u.array.hole_count + new_holes);
+    ext_obj_p->u.array.u.hole_count -= ECMA_FAST_ARRAY_HOLE_ONE;
   }
 
   values_p[index] = ecma_copy_value_if_not_object (value);
@@ -277,6 +301,18 @@ ecma_fast_array_set_property (ecma_object_t *object_p, /**< fast access mode arr
   return true;
 } /* ecma_fast_array_set_property */
 
+/**
+ * Get the number of array holes in a fast access array object
+ *
+ * @return number of array holes in a fast access array object
+ */
+inline uint32_t JERRY_ATTR_ALWAYS_INLINE
+ecma_fast_array_get_hole_count (ecma_object_t *obj_p) /**< fast access mode array object */
+{
+  JERRY_ASSERT (ecma_op_object_is_fast_array (obj_p));
+
+  return ((ecma_extended_object_t *) obj_p)->u.array.u.hole_count >> ECMA_FAST_ARRAY_HOLE_SHIFT;
+} /* ecma_fast_array_get_hole_count */
 
 /**
  * Extend the underlying buffer of a fast mode access array for the given new length
@@ -287,11 +323,10 @@ ecma_value_t *
 ecma_fast_array_extend (ecma_object_t *object_p, /**< fast access mode array object */
                         uint32_t new_length) /**< new length of the fast access mode array */
 {
-  JERRY_ASSERT (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_ARRAY);
+  JERRY_ASSERT (ecma_op_object_is_fast_array (object_p));
   ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
   uint32_t old_length = ext_obj_p->u.array.length;
 
-  JERRY_ASSERT (ext_obj_p->u.array.is_fast_mode);
   JERRY_ASSERT (old_length < new_length);
 
   ecma_ref_object (object_p);
@@ -317,6 +352,7 @@ ecma_fast_array_extend (ecma_object_t *object_p, /**< fast access mode array obj
     new_values_p[i] = ECMA_VALUE_ARRAY_HOLE;
   }
 
+  ext_obj_p->u.array.u.hole_count += (new_length - old_length) * ECMA_FAST_ARRAY_HOLE_ONE;
   ext_obj_p->u.array.length = new_length;
 
   ECMA_SET_NON_NULL_POINTER (object_p->u1.property_list_cp, new_values_p);
@@ -338,7 +374,7 @@ ecma_array_object_delete_property (ecma_object_t *object_p, /**< object */
   JERRY_ASSERT (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_ARRAY);
   ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
 
-  if (!ext_obj_p->u.array.is_fast_mode)
+  if (!ecma_op_object_is_fast_array (object_p))
   {
     ecma_delete_property (object_p, prop_value_p);
     return;
@@ -360,22 +396,8 @@ ecma_array_object_delete_property (ecma_object_t *object_p, /**< object */
 
   ecma_free_value_if_not_object (values_p[index]);
 
-  if (JERRY_UNLIKELY (ext_obj_p->u.array.length == 1))
-  {
-    const uint32_t old_length_aligned = ECMA_FAST_ARRAY_ALIGN_LENGTH (ext_obj_p->u.array.length);
-    jmem_heap_free_block (values_p, old_length_aligned * sizeof (ecma_value_t));
-    ext_obj_p->u.array.hole_count = 0;
-    ext_obj_p->u.array.length = 0;
-    object_p->u1.property_list_cp = JMEM_CP_NULL;
-    return;
-  }
-
   values_p[index] = ECMA_VALUE_ARRAY_HOLE;
-
-  if (++ext_obj_p->u.array.hole_count > ECMA_FAST_ARRAY_MAX_HOLE_COUNT)
-  {
-    ecma_fast_array_convert_to_normal (object_p);
-  }
+  ext_obj_p->u.array.u.hole_count += ECMA_FAST_ARRAY_HOLE_ONE;
 } /* ecma_array_object_delete_property */
 
 /**
@@ -387,11 +409,9 @@ uint32_t
 ecma_delete_fast_array_properties (ecma_object_t *object_p, /**< fast access mode array */
                                    uint32_t new_length) /**< new length of the fast access mode array */
 {
-  JERRY_ASSERT (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_ARRAY);
+  JERRY_ASSERT (ecma_op_object_is_fast_array (object_p));
 
   ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
-
-  JERRY_ASSERT (ext_obj_p->u.array.is_fast_mode);
 
   ecma_ref_object (object_p);
   ecma_value_t *values_p = ECMA_GET_NON_NULL_POINTER (ecma_value_t, object_p->u1.property_list_cp);
@@ -399,27 +419,12 @@ ecma_delete_fast_array_properties (ecma_object_t *object_p, /**< fast access mod
   uint32_t old_length = ext_obj_p->u.array.length;
   const uint32_t old_aligned_length = ECMA_FAST_ARRAY_ALIGN_LENGTH (old_length);
   JERRY_ASSERT (new_length < old_length);
-  JERRY_ASSERT (ext_obj_p->u.array.is_fast_mode);
-
-  if (new_length == 0)
-  {
-    for (uint32_t i = 0; i < old_length; i++)
-    {
-      ecma_free_value_if_not_object (values_p[i]);
-    }
-
-    jmem_heap_free_block (values_p, old_aligned_length * sizeof (ecma_value_t));
-    object_p->u1.property_list_cp = JMEM_CP_NULL;
-    ext_obj_p->u.array.length = new_length;
-    ecma_deref_object (object_p);
-    return new_length;
-  }
 
   for (uint32_t i = new_length; i < old_length; i++)
   {
     if (ecma_is_value_array_hole (values_p[i]))
     {
-      ext_obj_p->u.array.hole_count = (uint8_t) JERRY_MAX (ext_obj_p->u.array.hole_count - 1, 0);
+      ext_obj_p->u.array.u.hole_count -= ECMA_FAST_ARRAY_HOLE_ONE;
     }
     else
     {
@@ -427,21 +432,33 @@ ecma_delete_fast_array_properties (ecma_object_t *object_p, /**< fast access mod
     }
   }
 
-  const uint32_t new_aligned_length = ECMA_FAST_ARRAY_ALIGN_LENGTH (new_length);
+  jmem_cpointer_t new_property_list_cp;
 
-  ecma_value_t *new_values_p;
-  new_values_p = (ecma_value_t *) jmem_heap_realloc_block (values_p,
-                                                           old_aligned_length * sizeof (ecma_value_t),
-                                                           new_aligned_length * sizeof (ecma_value_t));
-
-  for (uint32_t i = new_length; i < new_aligned_length; i++)
+  if (new_length == 0)
   {
-    new_values_p[i] = ECMA_VALUE_ARRAY_HOLE;
+    jmem_heap_free_block (values_p, old_aligned_length * sizeof (ecma_value_t));
+    new_property_list_cp = JMEM_CP_NULL;
+  }
+  else
+  {
+    const uint32_t new_aligned_length = ECMA_FAST_ARRAY_ALIGN_LENGTH (new_length);
+
+    ecma_value_t *new_values_p;
+    new_values_p = (ecma_value_t *) jmem_heap_realloc_block (values_p,
+                                                             old_aligned_length * sizeof (ecma_value_t),
+                                                             new_aligned_length * sizeof (ecma_value_t));
+
+    for (uint32_t i = new_length; i < new_aligned_length; i++)
+    {
+      new_values_p[i] = ECMA_VALUE_ARRAY_HOLE;
+    }
+
+    ECMA_SET_NON_NULL_POINTER (new_property_list_cp, new_values_p);
   }
 
   ext_obj_p->u.array.length = new_length;
+  object_p->u1.property_list_cp = new_property_list_cp;
 
-  ECMA_SET_POINTER (object_p->u1.property_list_cp, new_values_p);
   ecma_deref_object (object_p);
 
   return new_length;
@@ -457,12 +474,11 @@ static void
 ecma_fast_array_set_length (ecma_object_t *object_p, /**< fast access mode array object */
                             uint32_t new_length) /**< new length of the fast access mode array object*/
 {
-  JERRY_ASSERT (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_ARRAY);
+  JERRY_ASSERT (ecma_op_object_is_fast_array (object_p));
 
   ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
   uint32_t old_length = ext_obj_p->u.array.length;
 
-  JERRY_ASSERT (ext_obj_p->u.array.is_fast_mode);
   JERRY_ASSERT (new_length >= old_length);
 
   if (new_length == old_length)
@@ -470,18 +486,18 @@ ecma_fast_array_set_length (ecma_object_t *object_p, /**< fast access mode array
     return;
   }
 
-  uint32_t new_holes = new_length - old_length - 1;
+  uint32_t old_holes = ext_obj_p->u.array.u.hole_count;
+  uint32_t new_holes = new_length - old_length;
 
-  JERRY_ASSERT (ext_obj_p->u.array.hole_count <= ECMA_FAST_ARRAY_MAX_HOLE_COUNT);
-
-  if (new_holes > (uint32_t) (ECMA_FAST_ARRAY_MAX_HOLE_COUNT - ext_obj_p->u.array.hole_count))
+  if (JERRY_UNLIKELY (new_holes > ECMA_FAST_ARRAY_MAX_NEW_HOLES_COUNT
+                      || ((old_holes >> ECMA_FAST_ARRAY_HOLE_SHIFT) + new_holes) > ECMA_FAST_ARRAY_MAX_HOLE_COUNT))
   {
     ecma_fast_array_convert_to_normal (object_p);
-    return;
   }
-
-  ecma_fast_array_extend (object_p, new_length);
-  ext_obj_p->u.array.hole_count = (uint8_t) (ext_obj_p->u.array.hole_count + new_holes);
+  else
+  {
+    ecma_fast_array_extend (object_p, new_length);
+  }
 
   return;
 } /* ecma_fast_array_set_length */
@@ -498,19 +514,17 @@ ecma_collection_t *
 ecma_fast_array_get_property_names (ecma_object_t *object_p, /**< fast access mode array object */
                                     uint32_t opts) /**< any combination of ecma_list_properties_options_t values */
 {
-  JERRY_ASSERT (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_ARRAY);
+  JERRY_ASSERT (ecma_op_object_is_fast_array (object_p));
 
   ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
-  JERRY_ASSERT (ext_obj_p->u.array.is_fast_mode);
-
   ecma_collection_t *ret_p = ecma_new_collection ();
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
-  if (opts & ECMA_LIST_SYMBOLS)
+#if ENABLED (JERRY_ES2015)
+  if (opts & ECMA_LIST_SYMBOLS_ONLY)
   {
     return ret_p;
   }
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+#endif /* ENABLED (JERRY_ES2015) */
 
   uint32_t length = ext_obj_p->u.array.length;
 
@@ -610,7 +624,7 @@ ecma_op_create_array_object (const ecma_value_t *arguments_list_p, /**< list of 
       return ecma_make_object_value (ecma_op_new_array_object (length));
     }
 
-    JERRY_ASSERT (((ecma_extended_object_t *) object_p)->u.array.is_fast_mode);
+    JERRY_ASSERT (ecma_op_object_is_fast_array (object_p));
 
     return ecma_make_object_value (object_p);
   }
@@ -637,6 +651,7 @@ ecma_op_create_array_object (const ecma_value_t *arguments_list_p, /**< list of 
   }
 
   ecma_value_t *values_p = ECMA_GET_NON_NULL_POINTER (ecma_value_t, object_p->u1.property_list_cp);
+  ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
 
   for (uint32_t index = 0;
        index < array_items_count;
@@ -646,10 +661,12 @@ ecma_op_create_array_object (const ecma_value_t *arguments_list_p, /**< list of 
     values_p[index] = ecma_copy_value_if_not_object (array_items_p[index]);
   }
 
+  ext_obj_p->u.array.u.hole_count -= ECMA_FAST_ARRAY_HOLE_ONE * array_items_count;
+
   return ecma_make_object_value (object_p);
 } /* ecma_op_create_array_object */
 
-#if ENABLED (JERRY_ES2015_CLASS)
+#if ENABLED (JERRY_ES2015)
 /**
  * Array object creation with custom prototype.
  *
@@ -659,28 +676,101 @@ ecma_op_create_array_object (const ecma_value_t *arguments_list_p, /**< list of 
  *         Returned value must be freed with ecma_free_value
  */
 ecma_value_t
-ecma_op_create_array_object_by_constructor (const ecma_value_t *arguments_list_p, /**< list of arguments that
-                                                                                   *   are passed to
-                                                                                   *   Array constructor */
-                                            ecma_length_t arguments_list_len, /**< length of the arguments' list */
-                                            bool is_treat_single_arg_as_length, /**< if the value is true,
-                                                                                 *   arguments_list_len is 1
-                                                                                 *   and single argument is Number,
-                                                                                 *   then treat the single argument
-                                                                                 *   as new Array's length rather
-                                                                                 *   than as single item of the
-                                                                                 *   Array */
-                                            ecma_object_t *object_p) /**< The object from whom the new array object
-                                                                      *   is being created */
+ecma_op_array_species_create (ecma_object_t *original_array_p, /**< The object from whom the new array object
+                                                                *   is being created */
+                              ecma_length_t length) /**< length of the array */
 {
-  /* TODO: Use @@species after Symbol has been implemented */
-  JERRY_UNUSED (object_p);
+  ecma_value_t constructor = ECMA_VALUE_UNDEFINED;
+  ecma_value_t original_array = ecma_make_object_value (original_array_p);
 
-  return ecma_op_create_array_object (arguments_list_p,
-                                      arguments_list_len,
-                                      is_treat_single_arg_as_length);
-} /* ecma_op_create_array_object_by_constructor */
-#endif /* ENABLED (JERRY_ES2015_CLASS) */
+  if (ecma_is_value_array (original_array))
+  {
+    constructor = ecma_op_object_get_by_magic_id (original_array_p, LIT_MAGIC_STRING_CONSTRUCTOR);
+    if (ECMA_IS_VALUE_ERROR (constructor))
+    {
+      return constructor;
+    }
+
+    if (ecma_is_constructor (constructor)
+        && ecma_get_object_from_value (constructor) == ecma_builtin_get (ECMA_BUILTIN_ID_ARRAY))
+    {
+      ecma_free_value (constructor);
+      constructor = ECMA_VALUE_UNDEFINED;
+    }
+    else if (ecma_is_value_object (constructor))
+    {
+      ecma_object_t *ctor_object_p = ecma_get_object_from_value (constructor);
+      constructor = ecma_op_object_get_by_symbol_id (ctor_object_p, LIT_GLOBAL_SYMBOL_SPECIES);
+      ecma_deref_object (ctor_object_p);
+
+      if (ECMA_IS_VALUE_ERROR (constructor))
+      {
+        return constructor;
+      }
+
+      if (ecma_is_value_null (constructor))
+      {
+        constructor = ECMA_VALUE_UNDEFINED;
+      }
+    }
+  }
+
+  if (ecma_is_value_undefined (constructor))
+  {
+    ecma_value_t length_val = ecma_make_uint32_value (length);
+    ecma_value_t new_array = ecma_op_create_array_object (&length_val, 1, true);
+    ecma_free_value (length_val);
+
+    return new_array;
+  }
+
+  if (!ecma_is_constructor (constructor))
+  {
+    ecma_free_value (constructor);
+    return ecma_raise_type_error (ECMA_ERR_MSG ("Invalid species constructor"));
+  }
+
+  ecma_value_t len_val = ecma_make_uint32_value (length);
+  ecma_object_t *ctor_object_p = ecma_get_object_from_value (constructor);
+  ecma_value_t ret_val = ecma_op_function_construct (ctor_object_p,
+                                                     ECMA_VALUE_UNDEFINED,
+                                                     &len_val,
+                                                     1);
+
+  ecma_deref_object (ctor_object_p);
+  ecma_free_value (len_val);
+  return ret_val;
+} /* ecma_op_array_species_create */
+
+/**
+ * CreateArrayIterator Abstract Operation
+ *
+ * See also:
+ *          ECMA-262 v6, 22.1.5.1
+ *
+ * Referenced by:
+ *          ECMA-262 v6, 22.1.3.4
+ *          ECMA-262 v6, 22.1.3.13
+ *          ECMA-262 v6, 22.1.3.29
+ *          ECMA-262 v6, 22.1.3.30
+ *
+ * Note:
+ *      Returned value must be freed with ecma_free_value.
+ *
+ * @return array iterator object
+ */
+ecma_value_t
+ecma_op_create_array_iterator (ecma_object_t *obj_p, /**< array object */
+                               ecma_array_iterator_type_t type) /**< array iterator type */
+{
+  ecma_object_t *prototype_obj_p = ecma_builtin_get (ECMA_BUILTIN_ID_ARRAY_ITERATOR_PROTOTYPE);
+
+  return ecma_op_create_iterator_object (ecma_make_object_value (obj_p),
+                                         prototype_obj_p,
+                                         ECMA_PSEUDO_ARRAY_ITERATOR,
+                                         (uint8_t) type);
+} /* ecma_op_create_array_iterator */
+#endif /* ENABLED (JERRY_ES2015) */
 
 /**
  * Low level delete of array items from new_length to old_length
@@ -697,9 +787,7 @@ ecma_delete_array_properties (ecma_object_t *object_p, /**< object */
   JERRY_ASSERT (new_length < old_length);
   JERRY_ASSERT (ecma_get_object_type (object_p) == ECMA_OBJECT_TYPE_ARRAY);
 
-  ecma_extended_object_t *ext_obj_p = (ecma_extended_object_t *) object_p;
-
-  if (ext_obj_p->u.array.is_fast_mode)
+  if (ecma_op_object_is_fast_array (object_p))
   {
     return ecma_delete_fast_array_properties (object_p, new_length);
   }
@@ -906,17 +994,17 @@ ecma_op_array_object_set_length (ecma_object_t *object_p, /**< the array object 
     {
       if (!(flags & ECMA_ARRAY_OBJECT_SET_LENGTH_FLAG_WRITABLE))
       {
-        uint8_t new_prop_value = (uint8_t) (ext_object_p->u.array.length_prop & ~ECMA_PROPERTY_FLAG_WRITABLE);
-        ext_object_p->u.array.length_prop = new_prop_value;
+        uint8_t new_prop_value = (uint8_t) (ext_object_p->u.array.u.length_prop & ~ECMA_PROPERTY_FLAG_WRITABLE);
+        ext_object_p->u.array.u.length_prop = new_prop_value;
       }
-      else if (!ecma_is_property_writable (ext_object_p->u.array.length_prop))
+      else if (!ecma_is_property_writable (ext_object_p->u.array.u.length_prop))
       {
         return ecma_reject (is_throw);
       }
     }
     return ECMA_VALUE_TRUE;
   }
-  else if (!ecma_is_property_writable (ext_object_p->u.array.length_prop))
+  else if (!ecma_is_property_writable (ext_object_p->u.array.u.length_prop))
   {
     return ecma_reject (is_throw);
   }
@@ -927,7 +1015,7 @@ ecma_op_array_object_set_length (ecma_object_t *object_p, /**< the array object 
   {
     current_len_uint32 = ecma_delete_array_properties (object_p, new_len_uint32, old_len_uint32);
   }
-  else if (ext_object_p->u.array.is_fast_mode)
+  else if (ecma_op_object_is_fast_array (object_p))
   {
     ecma_fast_array_set_length (object_p, new_len_uint32);
   }
@@ -937,8 +1025,8 @@ ecma_op_array_object_set_length (ecma_object_t *object_p, /**< the array object 
   if ((flags & ECMA_ARRAY_OBJECT_SET_LENGTH_FLAG_WRITABLE_DEFINED)
       && !(flags & ECMA_ARRAY_OBJECT_SET_LENGTH_FLAG_WRITABLE))
   {
-    uint8_t new_prop_value = (uint8_t) (ext_object_p->u.array.length_prop & ~ECMA_PROPERTY_FLAG_WRITABLE);
-    ext_object_p->u.array.length_prop = new_prop_value;
+    uint8_t new_prop_value = (uint8_t) (ext_object_p->u.array.u.length_prop & ~ECMA_PROPERTY_FLAG_WRITABLE);
+    ext_object_p->u.array.u.length_prop = new_prop_value;
   }
 
   if (current_len_uint32 == new_len_uint32)
@@ -1027,7 +1115,7 @@ ecma_op_array_object_define_own_property (ecma_object_t *object_p, /**< the arra
 
   ecma_extended_object_t *ext_object_p = (ecma_extended_object_t *) object_p;
 
-  if (ext_object_p->u.array.is_fast_mode)
+  if (ecma_op_object_is_fast_array (object_p))
   {
     if ((property_desc_p->flags & ECMA_FAST_ARRAY_DATA_PROP_FLAGS) == ECMA_FAST_ARRAY_DATA_PROP_FLAGS)
     {
@@ -1042,7 +1130,7 @@ ecma_op_array_object_define_own_property (ecma_object_t *object_p, /**< the arra
         return ECMA_VALUE_TRUE;
       }
 
-      JERRY_ASSERT (!ext_object_p->u.array.is_fast_mode);
+      JERRY_ASSERT (!ecma_op_array_is_fast_array (ext_object_p));
     }
     else
     {
@@ -1050,7 +1138,7 @@ ecma_op_array_object_define_own_property (ecma_object_t *object_p, /**< the arra
     }
   }
 
-  JERRY_ASSERT (!ext_object_p->u.array.is_fast_mode);
+  JERRY_ASSERT (!ecma_op_object_is_fast_array (object_p));
   uint32_t index = ecma_string_get_array_index (property_name_p);
 
   if (index == ECMA_STRING_NOT_ARRAY_INDEX)
@@ -1060,7 +1148,7 @@ ecma_op_array_object_define_own_property (ecma_object_t *object_p, /**< the arra
 
   bool update_length = (index >= ext_object_p->u.array.length);
 
-  if (update_length && !ecma_is_property_writable (ext_object_p->u.array.length_prop))
+  if (update_length && !ecma_is_property_writable (ext_object_p->u.array.u.length_prop))
   {
     return ecma_reject (property_desc_p->flags & ECMA_PROP_IS_THROW);
   }
@@ -1089,19 +1177,27 @@ ecma_op_array_object_define_own_property (ecma_object_t *object_p, /**< the arra
 } /* ecma_op_array_object_define_own_property */
 
 /**
+ * Get the length of the an array object
+ *
+ * @return the array length
+ */
+extern inline uint32_t JERRY_ATTR_ALWAYS_INLINE
+ecma_array_get_length (ecma_object_t *array_p) /**< array object */
+{
+  JERRY_ASSERT (ecma_get_object_type (array_p) == ECMA_OBJECT_TYPE_ARRAY);
+
+  return ((ecma_extended_object_t *) array_p)->u.array.length;
+} /* ecma_array_get_length */
+
+/**
  * List names of a String object's lazy instantiated properties
  *
  * @return string values collection
  */
 void
 ecma_op_array_list_lazy_property_names (ecma_object_t *obj_p, /**< a String object */
-                                        bool separate_enumerable, /**< true -  list enumerable properties
-                                                                   *           into main collection,
-                                                                   *           and non-enumerable to collection of
-                                                                   *           'skipped non-enumerable' properties,
-                                                                   *   false - list all properties into main
-                                                                   *           collection.
-                                                                   */
+                                        uint32_t opts, /**< listing options using flags
+                                                        *   from ecma_list_properties_options_t */
                                         ecma_collection_t *main_collection_p, /**< 'main'  collection */
                                         ecma_collection_t *non_enum_collection_p) /**< skipped
                                                                                    *   'non-enumerable'
@@ -1109,9 +1205,12 @@ ecma_op_array_list_lazy_property_names (ecma_object_t *obj_p, /**< a String obje
 {
   JERRY_ASSERT (ecma_get_object_type (obj_p) == ECMA_OBJECT_TYPE_ARRAY);
 
-  ecma_collection_t *for_non_enumerable_p = separate_enumerable ? non_enum_collection_p : main_collection_p;
+  ecma_collection_t *for_non_enumerable_p = (opts & ECMA_LIST_ENUMERABLE) ? non_enum_collection_p : main_collection_p;
 
-  ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+  if ((opts & ECMA_LIST_ARRAY_INDICES) == 0)
+  {
+    ecma_collection_push_back (for_non_enumerable_p, ecma_make_magic_string_value (LIT_MAGIC_STRING_LENGTH));
+  }
 } /* ecma_op_array_list_lazy_property_names */
 
 /**

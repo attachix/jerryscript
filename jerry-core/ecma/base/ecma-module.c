@@ -79,7 +79,6 @@ ecma_module_create_normalized_path (const uint8_t *char_p, /**< module specifier
                                                       ECMA_MODULE_MAX_PATH,
                                                       (char *) module_path_p);
 
-
   if (normalized_size > 0)
   {
     /* Convert the normalized path to cesu8. */
@@ -818,7 +817,7 @@ ecma_module_parse (ecma_module_t *module_p) /**< module */
                                                 0,
                                                 (jerry_char_t *) source_p,
                                                 source_size,
-                                                JERRY_PARSE_STRICT_MODE,
+                                                ECMA_PARSE_STRICT_MODE | ECMA_PARSE_MODULE,
                                                 &bytecode_data_p);
 
   JERRY_CONTEXT (module_top_context_p) = module_p->context_p->parent_p;

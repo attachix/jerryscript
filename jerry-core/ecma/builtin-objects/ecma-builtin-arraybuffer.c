@@ -19,7 +19,9 @@
 #include "ecma-globals.h"
 #include "ecma-helpers.h"
 #include "ecma-arraybuffer-object.h"
+#include "ecma-dataview-object.h"
 #include "ecma-try-catch-macro.h"
+#include "ecma-typedarray-object.h"
 #include "jrt.h"
 
 #if ENABLED (JERRY_ES2015_BUILTIN_TYPEDARRAY)
@@ -55,11 +57,8 @@ ecma_builtin_arraybuffer_object_is_view (ecma_value_t this_arg, /**< 'this' argu
                                          ecma_value_t arg) /**< argument 1 */
 {
   JERRY_UNUSED (this_arg);
-  JERRY_UNUSED (arg);
 
-  /* TODO: if arg has [[ViewArrayBuffer]], return true */
-
-  return ECMA_VALUE_FALSE;
+  return ecma_make_boolean_value (ecma_is_typedarray (arg) || ecma_is_dataview (arg));
 } /* ecma_builtin_arraybuffer_object_is_view */
 
 /**
@@ -93,6 +92,18 @@ ecma_builtin_arraybuffer_dispatch_construct (const ecma_value_t *arguments_list_
 
   return ecma_op_create_arraybuffer_object (arguments_list_p, arguments_list_len);
 } /* ecma_builtin_arraybuffer_dispatch_construct */
+
+/**
+ * 24.1.3.3 get ArrayBuffer [ @@species ] accessor
+ *
+ * @return ecma_value
+ *         returned value must be freed with ecma_free_value
+ */
+ecma_value_t
+ecma_builtin_arraybuffer_species_get (ecma_value_t this_value) /**< This Value */
+{
+  return ecma_copy_value (this_value);
+} /* ecma_builtin_arraybuffer_species_get */
 
 /**
  * @}

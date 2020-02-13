@@ -97,9 +97,16 @@ ecma_op_eval_chars_buffer (const lit_utf8_byte_t *code_p, /**< code characters b
   JERRY_CONTEXT (resource_name) = ecma_make_magic_string_value (LIT_MAGIC_STRING_RESOURCE_EVAL);
 #endif /* ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ERROR_MESSAGES) */
 
-#if ENABLED (JERRY_ES2015_CLASS)
+#if ENABLED (JERRY_ES2015)
   ECMA_CLEAR_SUPER_EVAL_PARSER_OPTS ();
-#endif /* ENABLED (JERRY_ES2015_CLASS) */
+
+  /* If a direct eval is used inside the function the info should be propagated. */
+  if (JERRY_CONTEXT (current_new_target) != JERRY_CONTEXT_INVALID_NEW_TARGET
+      && (JERRY_CONTEXT (status_flags) & ECMA_STATUS_DIRECT_EVAL))
+  {
+    parse_opts |= ECMA_PARSE_FUNCTION;
+  }
+#endif /* ENABLED (JERRY_ES2015) */
 
   ecma_value_t parse_status = parser_parse_script (NULL,
                                                    0,

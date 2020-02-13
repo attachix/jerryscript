@@ -137,6 +137,14 @@ class UnicodeCategorizer(object):
         if zero_width_space not in separators:
             bisect.insort(separators, int(zero_width_space))
 
+        # https://www.ecma-international.org/ecma-262/5.1/#sec-7.1 format-control characters
+        non_letters = self._categories['non_letters']
+        zero_width_non_joiner = 0x200C
+        zero_width_joiner = 0x200D
+
+        bisect.insort(non_letters, int(zero_width_non_joiner))
+        bisect.insort(non_letters, int(zero_width_joiner))
+
         return self._categories['letters'], self._categories['non_letters'], self._categories['separators']
 
 
@@ -780,7 +788,7 @@ def main():
                                         The input files (UnicodeData.txt, SpecialCasing.txt)
                                         must be retrieved from
                                         http://www.unicode.org/Public/<VERSION>/ucd/.
-                                        The last known good version is 9.0.0.
+                                        The last known good version is 13.0.0.
                                         ''')
 
     parser.add_argument('--unicode-data', metavar='FILE', action='store', required=True,

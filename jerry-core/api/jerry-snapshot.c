@@ -45,9 +45,9 @@ snapshot_get_global_flags (bool has_regex, /**< regex literal is present */
 #if ENABLED (JERRY_BUILTIN_REGEXP)
   flags |= (has_regex ? JERRY_SNAPSHOT_HAS_REGEX_LITERAL : 0);
 #endif /* ENABLED (JERRY_BUILTIN_REGEXP) */
-#if ENABLED (JERRY_ES2015_CLASS)
+#if ENABLED (JERRY_ES2015)
   flags |= (has_class ? JERRY_SNAPSHOT_HAS_CLASS_LITERAL : 0);
-#endif /* ENABLED (JERRY_ES2015_CLASS) */
+#endif /* ENABLED (JERRY_ES2015) */
 
   return flags;
 } /* snapshot_get_global_flags */
@@ -63,9 +63,9 @@ snapshot_check_global_flags (uint32_t global_flags) /**< global flags */
 #if ENABLED (JERRY_BUILTIN_REGEXP)
   global_flags &= (uint32_t) ~JERRY_SNAPSHOT_HAS_REGEX_LITERAL;
 #endif /* ENABLED (JERRY_BUILTIN_REGEXP) */
-#if ENABLED (JERRY_ES2015_CLASS)
+#if ENABLED (JERRY_ES2015)
   global_flags &= (uint32_t) ~JERRY_SNAPSHOT_HAS_CLASS_LITERAL;
-#endif /* ENABLED (JERRY_ES2015_CLASS) */
+#endif /* ENABLED (JERRY_ES2015) */
 
   return global_flags == snapshot_get_global_flags (false, false);
 } /* snapshot_check_global_flags */
@@ -160,12 +160,19 @@ snapshot_add_compiled_code (ecma_compiled_code_t *compiled_code_p, /**< compiled
   uint8_t *copied_code_start_p = snapshot_buffer_p + globals_p->snapshot_buffer_write_offset;
   ecma_compiled_code_t *copied_code_p = (ecma_compiled_code_t *) copied_code_start_p;
 
-#if ENABLED (JERRY_ES2015_CLASS)
+#if ENABLED (JERRY_ES2015)
+  if (compiled_code_p->status_flags & CBC_CODE_FLAG_HAS_TAGGED_LITERALS)
+  {
+    const char * const error_message_p = "Unsupported feature: tagged template literals.";
+    globals_p->snapshot_error = jerry_create_error (JERRY_ERROR_RANGE, (const jerry_char_t *) error_message_p);
+    return 0;
+  }
+
   if (compiled_code_p->status_flags & CBC_CODE_FLAGS_CONSTRUCTOR)
   {
     globals_p->class_found = true;
   }
-#endif /* ENABLED (JERRY_ES2015_CLASS) */
+#endif /* ENABLED (JERRY_ES2015) */
 
 #if ENABLED (JERRY_BUILTIN_REGEXP)
   if (!(compiled_code_p->status_flags & CBC_CODE_FLAGS_FUNCTION))
@@ -292,10 +299,11 @@ static_snapshot_error_unsupported_literal (snapshot_globals_t *globals_p, /**< s
 
   ecma_string_t *error_message_p = ecma_new_ecma_string_from_utf8 (error_prefix, sizeof (error_prefix) - 1);
 
-  literal = ecma_op_to_string (literal);
   JERRY_ASSERT (!ECMA_IS_VALUE_ERROR (literal));
 
-  ecma_string_t *literal_string_p = ecma_get_string_from_value (literal);
+  ecma_string_t *literal_string_p = ecma_op_to_string (literal);
+  JERRY_ASSERT (literal_string_p != NULL);
+
   error_message_p = ecma_concat_ecma_strings (error_message_p, literal_string_p);
   ecma_deref_ecma_string (literal_string_p);
 
@@ -416,7 +424,7 @@ static_snapshot_add_compiled_code (ecma_compiled_code_t *compiled_code_p, /**< c
     }
   }
 
-  if (CBC_NON_STRICT_ARGUMENTS_NEEDED (compiled_code_p))
+  if (compiled_code_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
   {
     buffer_p += ((size_t) compiled_code_p->size) << JMEM_ALIGNMENT_LOG;
     literal_start_p = ((ecma_value_t *) buffer_p) - argument_end;
@@ -488,7 +496,7 @@ jerry_snapshot_set_offsets (uint32_t *buffer_p, /**< buffer */
         }
       }
 
-      if (CBC_NON_STRICT_ARGUMENTS_NEEDED (bytecode_p))
+      if (bytecode_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
       {
         uint8_t *byte_p = (uint8_t *) bytecode_p;
         byte_p += ((size_t) bytecode_p->size) << JMEM_ALIGNMENT_LOG;
@@ -581,7 +589,7 @@ snapshot_load_compiled_code (const uint8_t *base_addr_p, /**< base address of th
     uint8_t *byte_p = (uint8_t *) bytecode_p;
     cbc_uint16_arguments_t *args_p = (cbc_uint16_arguments_t *) byte_p;
 
-    if (CBC_NON_STRICT_ARGUMENTS_NEEDED (bytecode_p))
+    if (bytecode_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
     {
       argument_end = args_p->argument_end;
     }
@@ -595,7 +603,7 @@ snapshot_load_compiled_code (const uint8_t *base_addr_p, /**< base address of th
     uint8_t *byte_p = (uint8_t *) bytecode_p;
     cbc_uint8_arguments_t *args_p = (cbc_uint8_arguments_t *) byte_p;
 
-    if (CBC_NON_STRICT_ARGUMENTS_NEEDED (bytecode_p))
+    if (bytecode_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
     {
       argument_end = args_p->argument_end;
     }
@@ -738,9 +746,9 @@ jerry_generate_snapshot_with_args (const jerry_char_t *resource_name_p, /**< scr
   JERRY_UNUSED (resource_name_p);
   JERRY_UNUSED (resource_name_length);
 
-#if ENABLED (JERRY_LINE_INFO)
+#if ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM)
   JERRY_CONTEXT (resource_name) = ECMA_VALUE_UNDEFINED;
-#endif /* ENABLED (JERRY_LINE_INFO) */
+#endif /* ENABLED (JERRY_LINE_INFO) || ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
 
   snapshot_globals_t globals;
   ecma_value_t parse_status;
@@ -762,7 +770,7 @@ jerry_generate_snapshot_with_args (const jerry_char_t *resource_name_p, /**< scr
 
   if (ECMA_IS_VALUE_ERROR (parse_status))
   {
-    return ecma_create_error_reference (JERRY_CONTEXT (error_value), true);
+    return ecma_create_error_reference_from_context ();
   }
 
   JERRY_ASSERT (bytecode_data_p != NULL);
@@ -982,8 +990,7 @@ jerry_snapshot_result (const uint32_t *snapshot_p, /**< snapshot */
   if (as_function)
   {
     ecma_object_t *lex_env_p = ecma_get_global_environment ();
-    ecma_object_t *func_obj_p = ecma_op_create_function_object (lex_env_p,
-                                                                bytecode_p);
+    ecma_object_t *func_obj_p = ecma_op_create_simple_function_object (lex_env_p, bytecode_p);
 
     if (!(bytecode_p->status_flags & CBC_CODE_FLAGS_STATIC_FUNCTION))
     {
@@ -1091,7 +1098,7 @@ scan_snapshot_functions (const uint8_t *buffer_p, /**< snapshot buffer start */
         }
       }
 
-      if (CBC_NON_STRICT_ARGUMENTS_NEEDED (bytecode_p))
+      if (bytecode_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
       {
         uint8_t *byte_p = (uint8_t *) bytecode_p;
         byte_p += ((size_t) bytecode_p->size) << JMEM_ALIGNMENT_LOG;
@@ -1169,7 +1176,7 @@ update_literal_offsets (uint8_t *buffer_p, /**< [in,out] snapshot buffer start *
         }
       }
 
-      if (CBC_NON_STRICT_ARGUMENTS_NEEDED (bytecode_p))
+      if (bytecode_p->status_flags & CBC_CODE_FLAGS_MAPPED_ARGUMENTS_NEEDED)
       {
         uint8_t *byte_p = (uint8_t *) bytecode_p;
         byte_p += ((size_t) bytecode_p->size) << JMEM_ALIGNMENT_LOG;
@@ -1543,42 +1550,6 @@ jerry_append_number_to_buffer (uint8_t *buffer_p, /**< buffer */
                                        utf8_str_size);
 } /* jerry_append_number_to_buffer */
 
-/**
- * Check whether the passed ecma-string is a valid identifier.
- *
- * @return true - if the ecma-string is a valid identifier,
- *         false - otherwise
- */
-static bool
-ecma_string_is_valid_identifier (const ecma_string_t *string_p)
-{
-  bool result = false;
-
-  ECMA_STRING_TO_UTF8_STRING (string_p, str_buffer_p, str_buffer_size);
-
-  if (lit_char_is_identifier_start (str_buffer_p))
-  {
-    const uint8_t *str_start_p = str_buffer_p;
-    const uint8_t *str_end_p = str_buffer_p + str_buffer_size;
-
-    result = true;
-
-    while (str_start_p < str_end_p)
-    {
-      if (!lit_char_is_identifier_part (str_start_p))
-      {
-        result = false;
-        break;
-      }
-      lit_utf8_incr (&str_start_p);
-    }
-  }
-
-  ECMA_FINALIZE_UTF8_STRING (str_buffer_p, str_buffer_size);
-
-  return result;
-} /* ecma_string_is_valid_identifier */
-
 #endif /* ENABLED (JERRY_SNAPSHOT_SAVE) */
 
 /**
@@ -1631,14 +1602,7 @@ jerry_get_literals_from_snapshot (const uint32_t *snapshot_p, /**< input snapsho
     {
       ecma_string_t *literal_p = ecma_get_string_from_value (buffer_p[i]);
 
-      /* NOTE:
-       *      We don't save a literal (in C format) which isn't a valid
-       *      identifier or it's a magic string.
-       * TODO:
-       *      Save all of the literals in C format as well.
-       */
-      if (ecma_get_string_magic (literal_p) == LIT_MAGIC_STRING__COUNT
-          && (!is_c_format || ecma_string_is_valid_identifier (literal_p)))
+      if (ecma_get_string_magic (literal_p) == LIT_MAGIC_STRING__COUNT)
       {
         literal_count++;
       }
@@ -1666,14 +1630,7 @@ jerry_get_literals_from_snapshot (const uint32_t *snapshot_p, /**< input snapsho
     {
       ecma_string_t *literal_p = ecma_get_string_from_value (buffer_p[i]);
 
-      /* NOTE:
-       *      We don't save a literal (in C format) which isn't a valid
-       *      identifier or it's a magic string.
-       * TODO:
-       *      Save all of the literals in C format as well.
-       */
-      if (ecma_get_string_magic (literal_p) == LIT_MAGIC_STRING__COUNT
-          && (!is_c_format || ecma_string_is_valid_identifier (literal_p)))
+      if (ecma_get_string_magic (literal_p) == LIT_MAGIC_STRING__COUNT)
       {
         literal_array[literal_idx++] = literal_p;
       }
@@ -1707,7 +1664,29 @@ jerry_get_literals_from_snapshot (const uint32_t *snapshot_p, /**< input snapsho
     for (lit_utf8_size_t i = 0; i < literal_count; i++)
     {
       lit_buf_p = jerry_append_chars_to_buffer (lit_buf_p, buffer_end_p, "  \"", 0);
-      lit_buf_p = jerry_append_ecma_string_to_buffer (lit_buf_p, buffer_end_p, literal_array[i]);
+      ECMA_STRING_TO_UTF8_STRING (literal_array[i], str_buffer_p, str_buffer_size);
+      for (lit_utf8_size_t j = 0; j < str_buffer_size; j++)
+      {
+        uint8_t byte = str_buffer_p[j];
+        if (byte < 32 || byte > 127)
+        {
+          lit_buf_p = jerry_append_chars_to_buffer (lit_buf_p, buffer_end_p, "\\x", 0);
+          ecma_char_t hex_digit = (ecma_char_t) (byte >> 4);
+          *lit_buf_p++ = (lit_utf8_byte_t) ((hex_digit > 9) ? (hex_digit + ('A' - 10)) : (hex_digit + '0'));
+          hex_digit = (lit_utf8_byte_t) (byte & 0xf);
+          *lit_buf_p++ = (lit_utf8_byte_t) ((hex_digit > 9) ? (hex_digit + ('A' - 10)) : (hex_digit + '0'));
+        }
+        else
+        {
+          if (byte == '\\' || byte == '"')
+          {
+            *lit_buf_p++ = '\\';
+          }
+          *lit_buf_p++ = byte;
+        }
+      }
+
+      ECMA_FINALIZE_UTF8_STRING (str_buffer_p, str_buffer_size);
       lit_buf_p = jerry_append_chars_to_buffer (lit_buf_p, buffer_end_p, "\"", 0);
 
       if (i < literal_count - 1)
@@ -1778,7 +1757,6 @@ jerry_get_literals_from_snapshot (const uint32_t *snapshot_p, /**< input snapsho
   return 0;
 #endif /* ENABLED (JERRY_SNAPSHOT_SAVE) */
 } /* jerry_get_literals_from_snapshot */
-
 
 /**
  * Generate snapshot function from specified source and arguments

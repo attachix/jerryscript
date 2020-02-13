@@ -119,7 +119,6 @@ handler_construct_2_freecb (void *native_p)
   test_api_is_free_callback_was_called = true;
 } /* handler_construct_2_freecb */
 
-
 /**
  * The name of the jerry_object_native_info_t struct.
  */
@@ -271,8 +270,6 @@ foreach (const jerry_value_t name, /**< field name */
 
   TEST_ASSERT (false);
   return false;
-
-
 } /* foreach */
 
 static bool
@@ -686,9 +683,16 @@ main (void)
   jerry_release_value (prim_val);
 
   /* Test: jerry_get_prototype */
+  proto_val = jerry_get_prototype (jerry_create_undefined ());
+  TEST_ASSERT (jerry_value_is_error (proto_val));
+  jerry_value_t error = jerry_get_value_from_error (proto_val, true);
+  TEST_ASSERT (jerry_get_error_type (error) == JERRY_ERROR_TYPE);
+  jerry_release_value (error);
+
   proto_val = jerry_get_prototype (obj_val);
   TEST_ASSERT (!jerry_value_is_error (proto_val));
   TEST_ASSERT (jerry_value_is_object (proto_val));
+  jerry_release_value (proto_val);
   jerry_release_value (obj_val);
 
   /* Test: jerry_set_prototype */
@@ -698,7 +702,9 @@ main (void)
   TEST_ASSERT (jerry_value_is_boolean (res));
   TEST_ASSERT (jerry_get_boolean_value (res));
 
-  res = jerry_set_prototype (obj_val, jerry_create_object ());
+  jerry_value_t new_proto = jerry_create_object ();
+  res = jerry_set_prototype (obj_val, new_proto);
+  jerry_release_value (new_proto);
   TEST_ASSERT (!jerry_value_is_error (res));
   TEST_ASSERT (jerry_value_is_boolean (res));
   TEST_ASSERT (jerry_get_boolean_value (res));

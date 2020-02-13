@@ -235,7 +235,7 @@ jerry_debugger_send_scope_chain (void)
 
     if (ecma_get_lex_env_type (lex_env_p) == ECMA_LEXICAL_ENVIRONMENT_DECLARATIVE)
     {
-      if ((lex_env_p->type_flags_refs & ECMA_OBJECT_FLAG_NON_CLOSURE) != 0)
+      if ((lex_env_p->type_flags_refs & ECMA_OBJECT_FLAG_BLOCK) != 0)
       {
         message_type_p->string[buffer_pos++] = JERRY_DEBUGGER_SCOPE_NON_CLOSURE;
       }
@@ -304,7 +304,7 @@ jerry_debugger_get_variable_type (ecma_value_t value) /**< input ecma value */
   {
     JERRY_ASSERT (ecma_is_value_object (value));
 
-    if (ecma_object_get_class_name (ecma_get_object_from_value (value)) == LIT_MAGIC_STRING_ARRAY_UL)
+    if (ecma_get_object_type (ecma_get_object_from_value (value)) == ECMA_OBJECT_TYPE_ARRAY)
     {
       ret_value = JERRY_DEBUGGER_VALUE_ARRAY;
     }
@@ -458,14 +458,9 @@ jerry_debugger_send_scope_variables (const uint8_t *recv_buffer_p) /**< pointer 
     JERRY_ASSERT (ecma_get_lex_env_type (lex_env_p) == ECMA_LEXICAL_ENVIRONMENT_THIS_OBJECT_BOUND);
     ecma_object_t *binding_obj_p = ecma_get_lex_env_binding_object (lex_env_p);
 
-    if (JERRY_UNLIKELY (ecma_get_object_type (binding_obj_p) == ECMA_OBJECT_TYPE_ARRAY))
+    if (JERRY_UNLIKELY (ecma_op_object_is_fast_array (binding_obj_p)))
     {
-      ecma_extended_object_t *ext_binding_obj_p = (ecma_extended_object_t *) binding_obj_p;
-
-      if (ext_binding_obj_p->u.array.is_fast_mode)
-      {
-        ecma_fast_array_convert_to_normal (binding_obj_p);
-      }
+      ecma_fast_array_convert_to_normal (binding_obj_p);
     }
 
     prop_iter_cp = binding_obj_p->u1.property_list_cp;
@@ -508,22 +503,22 @@ jerry_debugger_send_scope_variables (const uint8_t *recv_buffer_p) /**< pointer 
         ecma_deref_ecma_string (prop_name);
 
         ecma_property_value_t prop_value_p = prop_pair_p->values[i];
-        ecma_value_t property_value;
 
         uint8_t variable_type = jerry_debugger_get_variable_type (prop_value_p.value);
 
-        property_value = ecma_op_to_string (prop_value_p.value);
+        ecma_string_t *str_p = ecma_op_to_string (prop_value_p.value);
+        JERRY_ASSERT (str_p != NULL);
 
         if (!jerry_debugger_copy_variables_to_string_message (variable_type,
-                                                              ecma_get_string_from_value (property_value),
+                                                              str_p,
                                                               message_string_p,
                                                               &buffer_pos))
         {
-          ecma_free_value (property_value);
+          ecma_deref_ecma_string (str_p);
           return;
         }
 
-        ecma_free_value (property_value);
+        ecma_deref_ecma_string (str_p);
       }
     }
 
@@ -560,28 +555,23 @@ jerry_debugger_send_eval (const lit_utf8_byte_t *eval_string_p, /**< evaluated s
   {
     if (eval_string_p[4] != JERRY_DEBUGGER_EVAL_EVAL)
     {
+      JERRY_ASSERT (eval_string_p[4] == JERRY_DEBUGGER_EVAL_THROW || eval_string_p[4] == JERRY_DEBUGGER_EVAL_ABORT);
       JERRY_DEBUGGER_SET_FLAGS (JERRY_DEBUGGER_VM_EXCEPTION_THROWN);
-      JERRY_CONTEXT (error_value) = result;
 
       /* Stop where the error is caught. */
       JERRY_DEBUGGER_SET_FLAGS (JERRY_DEBUGGER_VM_STOP);
       JERRY_CONTEXT (debugger_stop_context) = NULL;
 
-      if (eval_string_p[4] == JERRY_DEBUGGER_EVAL_THROW)
-      {
-        JERRY_CONTEXT (status_flags) |= ECMA_STATUS_EXCEPTION;
-      }
-      else
-      {
-        JERRY_CONTEXT (status_flags) &= (uint32_t) ~ECMA_STATUS_EXCEPTION;
-      }
+      jcontext_raise_exception (result);
+      jcontext_set_abort_flag (eval_string_p[4] == JERRY_DEBUGGER_EVAL_ABORT);
 
       return true;
     }
 
     if (!ecma_is_value_string (result))
     {
-      ecma_value_t to_string_value = ecma_op_to_string (result);
+      ecma_string_t *str_p = ecma_op_to_string (result);
+      ecma_value_t to_string_value = ecma_make_string_value (str_p);
       ecma_free_value (result);
       result = to_string_value;
     }
@@ -618,8 +608,10 @@ jerry_debugger_send_eval (const lit_utf8_byte_t *eval_string_p, /**< evaluated s
     else
     {
       /* Primitive type. */
-      message = ecma_op_to_string (result);
-      JERRY_ASSERT (!ECMA_IS_VALUE_ERROR (message));
+      ecma_string_t *str_p = ecma_op_to_string (result);
+      JERRY_ASSERT (str_p != NULL);
+
+      message = ecma_make_string_value (str_p);
     }
 
     ecma_free_value (result);
@@ -1158,7 +1150,6 @@ jerry_debugger_receive (jerry_debugger_uint8_data_t **message_data_p) /**< [out]
   }
 } /* jerry_debugger_receive */
 
-
 #undef JERRY_DEBUGGER_CHECK_PACKET_SIZE
 
 /**
@@ -1221,7 +1212,6 @@ jerry_debugger_send_type (jerry_debugger_header_type_t type) /**< message type *
 
   jerry_debugger_send (sizeof (jerry_debugger_send_type_t));
 } /* jerry_debugger_send_type */
-
 
 /**
  * Send the type signal to the client.
@@ -1521,11 +1511,10 @@ jerry_debugger_exception_object_to_string (ecma_value_t exception_obj_value) /**
  *         false - otherwise
  */
 bool
-jerry_debugger_send_exception_string (void)
+jerry_debugger_send_exception_string (ecma_value_t exception_value)
 {
+  JERRY_ASSERT (jcontext_has_pending_exception ());
   ecma_string_t *string_p = NULL;
-
-  ecma_value_t exception_value = JERRY_CONTEXT (error_value);
 
   if (ecma_is_value_object (exception_value))
   {
@@ -1543,8 +1532,7 @@ jerry_debugger_send_exception_string (void)
   }
   else
   {
-    exception_value = ecma_op_to_string (exception_value);
-    string_p = ecma_get_string_from_value (exception_value);
+    string_p = ecma_op_to_string (exception_value);
   }
 
   ECMA_STRING_TO_UTF8_STRING (string_p, string_data_p, string_size);

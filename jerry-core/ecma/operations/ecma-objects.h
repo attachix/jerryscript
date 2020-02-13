@@ -16,6 +16,7 @@
 #ifndef ECMA_OBJECTS_H
 #define ECMA_OBJECTS_H
 
+#include "ecma-builtins.h"
 #include "ecma-conversion.h"
 #include "ecma-globals.h"
 
@@ -36,11 +37,17 @@ ecma_value_t ecma_op_object_find_by_uint32_index (ecma_object_t *object_p, uint3
 ecma_value_t ecma_op_object_find_by_number_index (ecma_object_t *object_p, ecma_number_t index);
 ecma_value_t ecma_op_object_get_own_data_prop (ecma_object_t *object_p, ecma_string_t *property_name_p);
 ecma_value_t ecma_op_object_get (ecma_object_t *object_p, ecma_string_t *property_name_p);
+ecma_value_t ecma_op_object_get_with_receiver (ecma_object_t *object_p, ecma_string_t *property_name_p,
+                                               ecma_value_t receiver);
+ecma_value_t ecma_op_object_get_length (ecma_object_t *object_p, uint32_t *length_p);
+ecma_value_t ecma_op_object_get_by_uint32_index (ecma_object_t *object_p, uint32_t index);
 ecma_value_t ecma_op_object_get_by_magic_id (ecma_object_t *object_p, lit_magic_string_id_t property_id);
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015)
+ecma_string_t *ecma_op_get_global_symbol (lit_magic_string_id_t property_id);
 ecma_value_t ecma_op_object_get_by_symbol_id (ecma_object_t *object_p, lit_magic_string_id_t property_id);
-ecma_value_t ecma_op_get_method_by_symbol_id (ecma_value_t value, lit_magic_string_id_t property_id);
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
+ecma_value_t ecma_op_get_method_by_symbol_id (ecma_value_t value, lit_magic_string_id_t symbol_id);
+ecma_value_t ecma_op_get_method_by_magic_id (ecma_value_t value, lit_magic_string_id_t magic_id);
+#endif /* ENABLED (JERRY_ES2015) */
 ecma_value_t ecma_op_object_put (ecma_object_t *object_p, ecma_string_t *property_name_p, ecma_value_t value,
                                  bool is_throw);
 ecma_value_t ecma_op_object_put_by_uint32_index (ecma_object_t *object_p, uint32_t index,
@@ -61,6 +68,16 @@ ecma_collection_t * ecma_op_object_get_property_names (ecma_object_t *obj_p, uin
 
 lit_magic_string_id_t ecma_object_get_class_name (ecma_object_t *obj_p);
 bool ecma_object_class_is (ecma_object_t *object_p, uint32_t class_id);
+bool ecma_object_is_regexp_object (ecma_value_t arg);
+#if ENABLED (JERRY_ES2015)
+ecma_value_t ecma_op_is_concat_spreadable (ecma_value_t arg);
+ecma_value_t ecma_op_is_regexp (ecma_value_t arg);
+ecma_value_t ecma_op_species_constructor (ecma_object_t *this_value, ecma_builtin_id_t default_constructor_id);
+#endif /* ENABLED (JERRY_ES2015) */
+ecma_value_t ecma_op_invoke (ecma_value_t object, ecma_string_t *property_name_p, ecma_value_t *args_p,
+                             ecma_length_t args_len);
+ecma_value_t ecma_op_invoke_by_magic_id (ecma_value_t object, lit_magic_string_id_t magic_string_id,
+                                         ecma_value_t *args_p, ecma_length_t args_len);
 
 /**
  * @}

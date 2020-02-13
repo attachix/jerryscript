@@ -179,7 +179,7 @@ ecma_process_promise_reaction_job (void *obj_p) /**< the job to be operated */
   {
     if (ECMA_IS_VALUE_ERROR (handler_result))
     {
-      handler_result = JERRY_CONTEXT (error_value);
+      handler_result = jcontext_take_exception ();
     }
 
     /* 7. */
@@ -253,7 +253,7 @@ ecma_process_promise_resolve_thenable_job (void *obj_p) /**< the job to be opera
 
   if (ECMA_IS_VALUE_ERROR (then_call_result))
   {
-    then_call_result = JERRY_CONTEXT (error_value);
+    then_call_result = jcontext_take_exception ();
 
     ret = ecma_op_function_call (ecma_get_object_from_value (funcs->reject),
                                  ECMA_VALUE_UNDEFINED,

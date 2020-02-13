@@ -39,11 +39,16 @@ typedef enum
   SCANNER_TYPE_WHILE, /**< while statement */
   SCANNER_TYPE_FOR, /**< for statement */
   SCANNER_TYPE_FOR_IN, /**< for-in statement */
-#if ENABLED (JERRY_ES2015_FOR_OF)
+#if ENABLED (JERRY_ES2015)
   SCANNER_TYPE_FOR_OF, /**< for-of statement */
-#endif /* ENABLED (JERRY_ES2015_FOR_OF) */
+#endif /* ENABLED (JERRY_ES2015) */
   SCANNER_TYPE_SWITCH, /**< switch statement */
   SCANNER_TYPE_CASE, /**< case statement */
+#if ENABLED (JERRY_ES2015)
+  SCANNER_TYPE_INITIALIZER, /**< destructuring binding or assignment pattern with initializer */
+  SCANNER_TYPE_LET_EXPRESSION, /**< let expression */
+  SCANNER_TYPE_ERR_REDECLARED, /**< syntax error: a variable is redeclared */
+#endif /* ENABLED (JERRY_ES2015) */
 } scanner_info_type_t;
 
 /**
@@ -127,6 +132,7 @@ typedef enum
   SCANNER_STREAM_UINT16_DIFF = (1 << 7), /**< relative distance is between -256 and 65535 */
   SCANNER_STREAM_HAS_ESCAPE = (1 << 6), /**< literal has escape */
   SCANNER_STREAM_NO_REG = (1 << 5), /**< identifier cannot be stored in register */
+  /* Update SCANNER_STREAM_TYPE_MASK macro if more bits are added. */
 } scanner_compressed_stream_flags_t;
 
 /**
@@ -136,10 +142,28 @@ typedef enum
 {
   SCANNER_STREAM_TYPE_END, /**< end of scanner data */
   SCANNER_STREAM_TYPE_HOLE, /**< no name is assigned to this argument */
-  SCANNER_STREAM_TYPE_ARG, /**< argument declaration */
-  SCANNER_STREAM_TYPE_ARG_FUNC, /**< argument declaration which is later initialized with a function */
   SCANNER_STREAM_TYPE_VAR, /**< var declaration */
-  SCANNER_STREAM_TYPE_FUNC, /**< function declaration */
+#if ENABLED (JERRY_ES2015)
+  SCANNER_STREAM_TYPE_LET, /**< let declaration */
+  SCANNER_STREAM_TYPE_CONST, /**< const declaration */
+  SCANNER_STREAM_TYPE_LOCAL, /**< local declaration (e.g. catch block) */
+  SCANNER_STREAM_TYPE_DESTRUCTURED_ARG, /**< destructuring argument declaration */
+#endif /* ENABLED (JERRY_ES2015) */
+#if ENABLED (JERRY_ES2015_MODULE_SYSTEM)
+  SCANNER_STREAM_TYPE_IMPORT, /**< module import */
+#endif /* ENABLED (JERRY_ES2015_MODULE_SYSTEM) */
+  SCANNER_STREAM_TYPE_ARG, /**< argument declaration */
+  /* Function types should be at the end. See the SCANNER_STREAM_TYPE_IS_FUNCTION macro. */
+  SCANNER_STREAM_TYPE_ARG_FUNC, /**< argument declaration which
+                                 *   is later initialized with a function */
+#if ENABLED (JERRY_ES2015)
+  SCANNER_STREAM_TYPE_DESTRUCTURED_ARG_FUNC, /**< destructuring argument declaration which
+                                              *   is later initialized with a function */
+#endif /* ENABLED (JERRY_ES2015) */
+  SCANNER_STREAM_TYPE_FUNC, /**< local or global function declaration */
+#if ENABLED (JERRY_ES2015)
+  SCANNER_STREAM_TYPE_FUNC_LOCAL, /**< always local function declaration */
+#endif /* ENABLED (JERRY_ES2015) */
 } scanner_compressed_stream_types_t;
 
 /**
@@ -148,20 +172,60 @@ typedef enum
 #define SCANNER_STREAM_TYPE_MASK 0xf
 
 /**
+ * Checks whether the decoded type represents a function declaration.
+ */
+#define SCANNER_STREAM_TYPE_IS_FUNCTION(type) ((type) >= SCANNER_STREAM_TYPE_ARG_FUNC)
+
+#if ENABLED (JERRY_ES2015)
+
+/**
+ * Checks whether the decoded type represents a function argument.
+ */
+#define SCANNER_STREAM_TYPE_IS_ARG(type) \
+  ((type) == SCANNER_STREAM_TYPE_ARG || (type) == SCANNER_STREAM_TYPE_DESTRUCTURED_ARG)
+
+/**
+ * Checks whether the decoded type represents both a function argument and a function declaration.
+ */
+#define SCANNER_STREAM_TYPE_IS_ARG_FUNC(type) \
+  ((type) == SCANNER_STREAM_TYPE_ARG_FUNC || (type) == SCANNER_STREAM_TYPE_DESTRUCTURED_ARG_FUNC)
+
+#else /* !ENABLED (JERRY_ES2015) */
+
+/**
+ * Checks whether the decoded type represents a function argument.
+ */
+#define SCANNER_STREAM_TYPE_IS_ARG(type) ((type) == SCANNER_STREAM_TYPE_ARG)
+
+/**
+ * Checks whether the decoded type represents both a function argument and a function declaration.
+ */
+#define SCANNER_STREAM_TYPE_IS_ARG_FUNC(type) ((type) == SCANNER_STREAM_TYPE_ARG_FUNC)
+
+#endif /* ENABLED (JERRY_ES2015) */
+
+/**
  * Constants for u8_arg flags in scanner_function_info_t.
  */
 typedef enum
 {
   SCANNER_FUNCTION_ARGUMENTS_NEEDED = (1 << 0), /**< arguments object needs to be created */
+#if ENABLED (JERRY_ES2015)
+  SCANNER_FUNCTION_STATEMENT = (1 << 1), /**< function is (async) function statement */
+  SCANNER_FUNCTION_ASYNC = (1 << 2), /**< function is async function expression */
+#endif /* ENABLED (JERRY_ES2015) */
 } scanner_function_flags_t;
 
 /**
- * Scanner info for function statements.
+ * Option bits for scanner_create_variables function.
  */
-typedef struct
+typedef enum
 {
-  scanner_info_t info; /**< header */
-} scanner_function_info_t;
+  SCANNER_CREATE_VARS_NO_OPTS = 0, /**< no options */
+  SCANNER_CREATE_VARS_IS_EVAL = (1 << 0), /**< create variables for script / direct eval */
+  SCANNER_CREATE_VARS_IS_FUNCTION_ARGS = (1 << 1), /**< create variables for function arguments */
+  SCANNER_CREATE_VARS_IS_FUNCTION_BODY = (1 << 2), /**< create variables for function body */
+} scanner_create_variables_flags_t;
 
 /**
  * @}

@@ -308,7 +308,7 @@ parser_emit_cbc_literal (parser_context_t *context_p, /**< context */
   context_p->last_cbc_opcode = opcode;
   context_p->last_cbc.literal_index = literal_index;
   context_p->last_cbc.literal_type = LEXER_UNUSED_LITERAL;
-  context_p->last_cbc.literal_object_type = LEXER_LITERAL_OBJECT_ANY;
+  context_p->last_cbc.literal_keyword_type = LEXER_EOS;
 } /* parser_emit_cbc_literal */
 
 /**
@@ -330,7 +330,7 @@ parser_emit_cbc_literal_value (parser_context_t *context_p, /**< context */
   context_p->last_cbc_opcode = opcode;
   context_p->last_cbc.literal_index = literal_index;
   context_p->last_cbc.literal_type = LEXER_UNUSED_LITERAL;
-  context_p->last_cbc.literal_object_type = LEXER_LITERAL_OBJECT_ANY;
+  context_p->last_cbc.literal_keyword_type = LEXER_EOS;
   context_p->last_cbc.value = value;
 } /* parser_emit_cbc_literal_value */
 
@@ -351,7 +351,7 @@ parser_emit_cbc_literal_from_token (parser_context_t *context_p, /**< context */
   context_p->last_cbc_opcode = opcode;
   context_p->last_cbc.literal_index = context_p->lit_object.index;
   context_p->last_cbc.literal_type = context_p->token.lit_location.type;
-  context_p->last_cbc.literal_object_type = context_p->lit_object.type;
+  context_p->last_cbc.literal_keyword_type = context_p->token.keyword_type;
 } /* parser_emit_cbc_literal_from_token */
 
 /**
@@ -828,10 +828,20 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Invalid (unexpected) character.";
     }
+    case PARSER_ERR_INVALID_OCTAL_DIGIT:
+    {
+      return "Invalid octal digit.";
+    }
     case PARSER_ERR_INVALID_HEX_DIGIT:
     {
       return "Invalid hexadecimal digit.";
     }
+#if ENABLED (JERRY_ES2015)
+    case PARSER_ERR_INVALID_BIN_DIGIT:
+    {
+      return "Invalid binary digit.";
+    }
+#endif /* ENABLED (JERRY_ES2015) */
     case PARSER_ERR_INVALID_ESCAPE_SEQUENCE:
     {
       return "Invalid escape sequence.";
@@ -847,6 +857,10 @@ parser_error_to_string (parser_error_t error) /**< error code */
     case PARSER_ERR_INVALID_IDENTIFIER_PART:
     {
       return "Character cannot be part of an identifier.";
+    }
+    case PARSER_ERR_INVALID_KEYWORD:
+    {
+      return "Escape sequences are not allowed in keywords.";
     }
     case PARSER_ERR_INVALID_NUMBER:
     {
@@ -928,6 +942,20 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Arguments is not allowed to be used here in strict mode.";
     }
+#if ENABLED (JERRY_ES2015)
+    case PARSER_ERR_USE_STRICT_NOT_ALLOWED:
+    {
+      return "The 'use strict' directive is not allowed for functions with non-simple arguments.";
+    }
+    case PARSER_ERR_YIELD_NOT_ALLOWED:
+    {
+      return "Incorrect use of yield keyword.";
+    }
+    case PARSER_ERR_FOR_IN_OF_DECLARATION:
+    {
+      return "for in-of loop variable declaration may not have an initializer.";
+    }
+#endif /* ENABLED (JERRY_ES2015) */
     case PARSER_ERR_DELETE_IDENT_NOT_ALLOWED:
     {
       return "Deleting identifier is not allowed in strict mode.";
@@ -956,24 +984,6 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Case statement must be in a switch block.";
     }
-#if ENABLED (JERRY_ES2015_CLASS)
-    case PARSER_ERR_MULTIPLE_CLASS_CONSTRUCTORS:
-    {
-      return "Multiple constructors are not allowed.";
-    }
-    case PARSER_ERR_CLASS_CONSTRUCTOR_AS_ACCESSOR:
-    {
-      return "Class constructor may not be an accessor.";
-    }
-    case PARSER_ERR_CLASS_STATIC_PROTOTYPE:
-    {
-      return "Classes may not have a static property called 'prototype'.";
-    }
-    case PARSER_ERR_UNEXPECTED_SUPER_REFERENCE:
-    {
-      return "Super is not allowed to be used here.";
-    }
-#endif /* ENABLED (JERRY_ES2015_CLASS) */
     case PARSER_ERR_LEFT_PAREN_EXPECTED:
     {
       return "Expected '(' token.";
@@ -990,12 +1000,6 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Expected ']' token.";
     }
-#if ENABLED (JERRY_ES2015_TEMPLATE_STRINGS)
-    case PARSER_ERR_RIGHT_BRACE_EXPECTED:
-    {
-      return "Expected '}' token.";
-    }
-#endif /* ENABLED (JERRY_ES2015_TEMPLATE_STRINGS) */
     case PARSER_ERR_COLON_EXPECTED:
     {
       return "Expected ':' token.";
@@ -1012,12 +1016,6 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Expected 'in' token.";
     }
-#if ENABLED (JERRY_ES2015_FOR_OF)
-    case PARSER_ERR_OF_EXPECTED:
-    {
-      return "Expected 'of' token.";
-    }
-#endif /* ENABLED (JERRY_ES2015_FOR_OF) */
     case PARSER_ERR_WHILE_EXPECTED:
     {
       return "While expected for do-while loop.";
@@ -1045,6 +1043,10 @@ parser_error_to_string (parser_error_t error) /**< error code */
     case PARSER_ERR_PRIMARY_EXP_EXPECTED:
     {
       return "Primary expression expected.";
+    }
+    case PARSER_ERR_LEFT_HAND_SIDE_EXP_EXPECTED:
+    {
+      return "Left-hand-side expression expected.";
     }
     case PARSER_ERR_STATEMENT_EXPECTED:
     {
@@ -1102,24 +1104,6 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Duplicated label.";
     }
-#if ((ENABLED (JERRY_ES2015_FUNCTION_PARAMETER_INITIALIZER)) \
-     || (ENABLED (JERRY_ES2015_FUNCTION_REST_PARAMETER)))
-    case PARSER_ERR_DUPLICATED_ARGUMENT_NAMES:
-    {
-      return "Duplicated function argument names are not allowed here.";
-    }
-#endif /* ((ENABLED (JERRY_ES2015_FUNCTION_PARAMETER_INITIALIZER))
-           || (ENABLED (JERRY_ES2015_FUNCTION_REST_PARAMETER))) */
-#if ENABLED (JERRY_ES2015_FUNCTION_PARAMETER_INITIALIZER)
-    case PARSER_ERR_FORMAL_PARAM_AFTER_REST_PARAMETER:
-    {
-      return "Rest parameter must be the last formal parameter.";
-    }
-    case PARSER_ERR_REST_PARAMETER_DEFAULT_INITIALIZER:
-    {
-      return "Rest parameter may not have a default initializer.";
-    }
-#endif /* ENABLED (JERRY_ES2015_FUNCTION_PARAMETER_INITIALIZER) */
     case PARSER_ERR_OBJECT_PROPERTY_REDEFINED:
     {
       return "Property of object literal redefined.";
@@ -1128,7 +1112,88 @@ parser_error_to_string (parser_error_t error) /**< error code */
     {
       return "Non-strict argument definition.";
     }
-
+#if ENABLED (JERRY_ES2015)
+    case PARSER_ERR_VARIABLE_REDECLARED:
+    {
+      return "Local variable is redeclared.";
+    }
+    case PARSER_ERR_LEXICAL_SINGLE_STATEMENT:
+    {
+      return "Lexical declaration cannot appear in a single-statement context.";
+    }
+    case PARSER_ERR_LEXICAL_LET_BINDING:
+    {
+      return "Let binding cannot appear in let/const declarations.";
+    }
+    case PARSER_ERR_MISSING_ASSIGN_AFTER_CONST:
+    {
+      return "Value assignment is expected after a const declaration.";
+    }
+    case PARSER_ERR_MULTIPLE_CLASS_CONSTRUCTORS:
+    {
+      return "Multiple constructors are not allowed.";
+    }
+    case PARSER_ERR_CLASS_CONSTRUCTOR_AS_ACCESSOR:
+    {
+      return "Class constructor may not be an accessor.";
+    }
+    case PARSER_ERR_CLASS_CONSTRUCTOR_AS_GENERATOR:
+    {
+      return "Class constructor may not be a generator.";
+    }
+    case PARSER_ERR_CLASS_STATIC_PROTOTYPE:
+    {
+      return "Classes may not have a static property called 'prototype'.";
+    }
+    case PARSER_ERR_UNEXPECTED_SUPER_REFERENCE:
+    {
+      return "Super is not allowed to be used here.";
+    }
+    case PARSER_ERR_RIGHT_BRACE_EXPECTED:
+    {
+      return "Expected '}' token.";
+    }
+    case PARSER_ERR_OF_EXPECTED:
+    {
+      return "Expected 'of' token.";
+    }
+    case PARSER_ERR_ASSIGNMENT_EXPECTED:
+    {
+      return "Unexpected arrow function or yield expression (parentheses around the expression may help).";
+    }
+    case PARSER_ERR_DUPLICATED_ARGUMENT_NAMES:
+    {
+      return "Duplicated function argument names are not allowed here.";
+    }
+    case PARSER_ERR_INVALID_DESTRUCTURING_PATTERN:
+    {
+      return "Invalid destructuring assignment target.";
+    }
+    case PARSER_ERR_ILLEGAL_PROPERTY_IN_DECLARATION:
+    {
+      return "Illegal property in declaration context.";
+    }
+    case PARSER_ERR_FORMAL_PARAM_AFTER_REST_PARAMETER:
+    {
+      return "Rest parameter must be the last formal parameter.";
+    }
+    case PARSER_ERR_SETTER_REST_PARAMETER:
+    {
+      return "Setter function argument must not be a rest parameter.";
+    }
+    case PARSER_ERR_REST_PARAMETER_DEFAULT_INITIALIZER:
+    {
+      return "Rest parameter may not have a default initializer.";
+    }
+    case PARSER_ERR_NEW_TARGET_EXPECTED:
+    {
+      return "Expected new.target expression.";
+    }
+    case PARSER_ERR_NEW_TARGET_NOT_ALLOWED:
+    {
+      return "new.target expression is not allowed here.";
+    }
+#endif /* ENABLED (JERRY_ES2015) */
 #if ENABLED (JERRY_ES2015_MODULE_SYSTEM)
     case PARSER_ERR_FILE_NOT_FOUND:
     {

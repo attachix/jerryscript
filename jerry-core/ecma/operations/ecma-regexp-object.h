@@ -38,7 +38,9 @@ typedef enum
   RE_FLAG_EMPTY = 0u,              /* Empty RegExp flags */
   RE_FLAG_GLOBAL = (1u << 1),      /**< ECMA-262 v5, 15.10.7.2 */
   RE_FLAG_IGNORE_CASE = (1u << 2), /**< ECMA-262 v5, 15.10.7.3 */
-  RE_FLAG_MULTILINE = (1u << 3)    /**< ECMA-262 v5, 15.10.7.4 */
+  RE_FLAG_MULTILINE = (1u << 3),   /**< ECMA-262 v5, 15.10.7.4 */
+  RE_FLAG_STICKY = (1u << 4),      /**< ECMA-262 v6, 21.2.5.12 */
+  RE_FLAG_UNICODE = (1u << 5)      /**< ECMA-262 v6, 21.2.5.15 */
 } ecma_regexp_flags_t;
 
 /**
@@ -49,6 +51,14 @@ typedef struct
   const lit_utf8_byte_t *begin_p; /**< substring start pointer */
   const lit_utf8_byte_t *end_p;   /**< substring end pointer */
 } ecma_regexp_capture_t;
+
+/**
+ * Check if an ecma_regexp_capture_t contains a defined capture
+ */
+#define ECMA_RE_IS_CAPTURE_DEFINED(c) ((c)->begin_p != NULL && (c)->end_p >= (c)->begin_p)
+
+ecma_value_t
+ecma_regexp_get_capture_value (const ecma_regexp_capture_t *const capture_p);
 
 /**
  * Structure for storing non-capturing group results
@@ -89,13 +99,20 @@ typedef struct
 
 ecma_value_t ecma_op_create_regexp_object_from_bytecode (re_compiled_code_t *bytecode_p);
 ecma_value_t ecma_op_create_regexp_object (ecma_string_t *pattern_p, uint16_t flags);
-ecma_value_t ecma_regexp_exec_helper (ecma_value_t regexp_value, ecma_value_t input_string, bool ignore_global);
-ecma_value_t ecma_regexp_read_pattern_str_helper (ecma_value_t pattern_arg, ecma_string_t **pattern_string_p);
-ecma_char_t ecma_regexp_canonicalize (ecma_char_t ch, bool is_ignorecase);
-ecma_char_t ecma_regexp_canonicalize_char (ecma_char_t ch);
+ecma_value_t ecma_regexp_exec_helper (ecma_object_t *regexp_object_p,
+                                      ecma_string_t *input_string_p);
+ecma_string_t *ecma_regexp_read_pattern_str_helper (ecma_value_t pattern_arg);
+lit_code_point_t ecma_regexp_canonicalize (lit_code_point_t ch, bool is_ignorecase);
+lit_code_point_t ecma_regexp_canonicalize_char (lit_code_point_t ch);
 ecma_value_t ecma_regexp_parse_flags (ecma_string_t *flags_str_p, uint16_t *flags_p);
 void ecma_regexp_initialize_props (ecma_object_t *re_obj_p, ecma_string_t *source_p, uint16_t flags);
 
+ecma_value_t ecma_regexp_replace_helper (ecma_value_t this_arg, ecma_value_t string_arg, ecma_value_t replace_arg);
+ecma_value_t ecma_regexp_search_helper (ecma_value_t regexp_arg, ecma_value_t string_arg);
+ecma_value_t ecma_regexp_split_helper (ecma_value_t this_arg, ecma_value_t string_arg, ecma_value_t limit_arg);
+ecma_value_t ecma_regexp_match_helper (ecma_value_t this_arg, ecma_value_t string_arg);
+
+ecma_value_t ecma_op_regexp_exec (ecma_value_t this_arg, ecma_string_t *str_p);
 /**
  * @}
  * @}

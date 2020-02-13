@@ -315,7 +315,7 @@ re_parse_next_token (re_parser_ctx_t *parser_ctx_p, /**< RegExp parser context *
     return ret_value;
   }
 
-  ecma_char_t ch = lit_utf8_read_next (&parser_ctx_p->input_curr_p);
+  ecma_char_t ch = lit_cesu8_read_next (&parser_ctx_p->input_curr_p);
 
   switch (ch)
   {
@@ -348,7 +348,7 @@ re_parse_next_token (re_parser_ctx_t *parser_ctx_p, /**< RegExp parser context *
       }
 
       out_token_p->type = RE_TOK_CHAR;
-      ch = lit_utf8_read_next (&parser_ctx_p->input_curr_p);
+      ch = lit_cesu8_read_next (&parser_ctx_p->input_curr_p);
 
       if (ch == LIT_CHAR_LOWERCASE_B)
       {
@@ -630,11 +630,22 @@ re_parse_next_token (re_parser_ctx_t *parser_ctx_p, /**< RegExp parser context *
     {
       return ecma_raise_syntax_error (ECMA_ERR_MSG ("Invalid RegExp token."));
     }
+    case LIT_CHAR_NULL:
+    {
+      out_token_p->type = RE_TOK_EOF;
+      break;
+    }
     case LIT_CHAR_LEFT_BRACE:
     {
 #if ENABLED (JERRY_REGEXP_STRICT_MODE)
       return ecma_raise_syntax_error (ECMA_ERR_MSG ("Invalid RegExp token."));
 #else /* !ENABLED (JERRY_REGEXP_STRICT_MODE) */
+
+      /* Make sure that the current '{' does not start an iterator.
+       *
+       * E.g: /\s+{3,4}/ should fail as there is nothing to iterate.
+       *     However /\s+{3,4/ should be valid in web compatibility mode.
+       */
       const lit_utf8_byte_t *input_curr_p = parser_ctx_p->input_curr_p;
 
       lit_utf8_decr (&parser_ctx_p->input_curr_p);
@@ -645,33 +656,37 @@ re_parse_next_token (re_parser_ctx_t *parser_ctx_p, /**< RegExp parser context *
       }
 
       JERRY_ASSERT (ECMA_IS_VALUE_ERROR (ret_value));
-      ecma_free_value (JERRY_CONTEXT (error_value));
+      jcontext_release_exception ();
 
       parser_ctx_p->input_curr_p = input_curr_p;
-
-      out_token_p->type = RE_TOK_CHAR;
-      out_token_p->value = ch;
-      ret_value = re_parse_iterator (parser_ctx_p, out_token_p);
-
-      if (!ecma_is_value_empty (ret_value))
-      {
-        ecma_free_value (JERRY_CONTEXT (error_value));
-        parser_ctx_p->input_curr_p = input_curr_p;
-        ret_value = ECMA_VALUE_EMPTY;
-      }
+      /* It was not an iterator, continue the parsing. */
 #endif /* ENABLED (JERRY_REGEXP_STRICT_MODE) */
-      break;
-    }
-    case LIT_CHAR_NULL:
-    {
-      out_token_p->type = RE_TOK_EOF;
-      break;
+      /* FALLTHRU */
     }
     default:
     {
       out_token_p->type = RE_TOK_CHAR;
       out_token_p->value = ch;
+#if ENABLED (JERRY_REGEXP_STRICT_MODE)
       ret_value = re_parse_iterator (parser_ctx_p, out_token_p);
+#else
+      /* In case of compatiblity mode try the following:
+       * 1. Try parsing an iterator after the character.
+       * 2.a. If no error is reported: it was an iterator so return an empty value.
+       * 2.b. If there was an error: it was not an iterator thus return the current position
+       *      to the start of the iterator parsing and set the return value to the empty value.
+       * 3. The next 're_parse_next_token' call will handle the further parsing of characters.
+       */
+      const lit_utf8_byte_t *input_curr_p = parser_ctx_p->input_curr_p;
+      ret_value = re_parse_iterator (parser_ctx_p, out_token_p);
+
+      if (!ecma_is_value_empty (ret_value))
+      {
+        jcontext_release_exception ();
+        parser_ctx_p->input_curr_p = input_curr_p;
+        ret_value = ECMA_VALUE_EMPTY;
+      }
+#endif
       break;
     }
   }

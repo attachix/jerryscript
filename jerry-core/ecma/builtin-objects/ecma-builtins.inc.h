@@ -362,7 +362,6 @@ BUILTIN_ROUTINE (ECMA_BUILTIN_ID_FLOAT64ARRAY,
                  float64array)
 #endif /* ENABLED (JERRY_NUMBER_TYPE_FLOAT64) */
 
-
 BUILTIN (ECMA_BUILTIN_ID_INT8ARRAY_PROTOTYPE,
          ECMA_OBJECT_TYPE_GENERAL,
          ECMA_BUILTIN_ID_TYPEDARRAY_PROTOTYPE,
@@ -472,7 +471,57 @@ BUILTIN_ROUTINE (ECMA_BUILTIN_ID_SET,
 
 #endif /* ENABLED (JERRY_ES2015_BUILTIN_SET) */
 
-#if ENABLED (JERRY_ES2015_BUILTIN_SYMBOL)
+#if ENABLED (JERRY_ES2015_BUILTIN_WEAKMAP)
+
+/* The WeakMap prototype object (23.1.3) */
+BUILTIN (ECMA_BUILTIN_ID_WEAKMAP_PROTOTYPE,
+         ECMA_OBJECT_TYPE_GENERAL,
+         ECMA_BUILTIN_ID_OBJECT_PROTOTYPE,
+         true,
+         weakmap_prototype)
+
+/* The WeakMap routine (ECMA-262 v6, 23.1.1.1) */
+BUILTIN_ROUTINE (ECMA_BUILTIN_ID_WEAKMAP,
+                 ECMA_OBJECT_TYPE_FUNCTION,
+                 ECMA_BUILTIN_ID_FUNCTION_PROTOTYPE,
+                 true,
+                 weakmap)
+
+#endif /* ENABLED (JERRY_ES2015_BUILTIN_WEAKMAP) */
+
+#if ENABLED (JERRY_ES2015_BUILTIN_WEAKSET)
+
+/* The WeakSet prototype object (23.1.3) */
+BUILTIN (ECMA_BUILTIN_ID_WEAKSET_PROTOTYPE,
+         ECMA_OBJECT_TYPE_GENERAL,
+         ECMA_BUILTIN_ID_OBJECT_PROTOTYPE,
+         true,
+         weakset_prototype)
+
+/* The WeakSet routine (ECMA-262 v6, 23.1.1.1) */
+BUILTIN_ROUTINE (ECMA_BUILTIN_ID_WEAKSET,
+                 ECMA_OBJECT_TYPE_FUNCTION,
+                 ECMA_BUILTIN_ID_FUNCTION_PROTOTYPE,
+                 true,
+                 weakset)
+
+#endif /* ENABLED (JERRY_ES2015_BUILTIN_WEAKSET) */
+
+#if ENABLED (JERRY_ES2015)
+
+/* Intrinsic hidden builtin object  */
+BUILTIN (ECMA_BUILTIN_ID_INTRINSIC_OBJECT,
+         ECMA_OBJECT_TYPE_GENERAL,
+         ECMA_BUILTIN_ID__COUNT,
+         true,
+         intrinsic)
+
+/* The Array.prototype[@@unscopables] object */
+BUILTIN (ECMA_BUILTIN_ID_ARRAY_PROTOTYPE_UNSCOPABLES,
+         ECMA_OBJECT_TYPE_GENERAL,
+         ECMA_BUILTIN_ID__COUNT,
+         true,
+         array_prototype_unscopables)
 
 /* The Symbol prototype object (ECMA-262 v6, 19.4.2.7) */
 BUILTIN (ECMA_BUILTIN_ID_SYMBOL_PROTOTYPE,
@@ -488,8 +537,6 @@ BUILTIN_ROUTINE (ECMA_BUILTIN_ID_SYMBOL,
                  true,
                  symbol)
 
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_SYMBOL) */
-#if ENABLED (JERRY_ES2015_BUILTIN_ITERATOR)
 /* The %IteratorPrototype% object (ECMA-262 v6, 25.1.2) */
 BUILTIN (ECMA_BUILTIN_ID_ITERATOR_PROTOTYPE,
          ECMA_OBJECT_TYPE_GENERAL,
@@ -511,6 +558,27 @@ BUILTIN (ECMA_BUILTIN_ID_STRING_ITERATOR_PROTOTYPE,
          true,
          string_iterator_prototype)
 
+/* The %(GeneratorFunction)% object */
+BUILTIN_ROUTINE (ECMA_BUILTIN_ID_GENERATOR_FUNCTION,
+                 ECMA_OBJECT_TYPE_FUNCTION,
+                 ECMA_BUILTIN_ID_FUNCTION,
+                 true,
+                 generator_function)
+
+/* The %(Generator)% object */
+BUILTIN (ECMA_BUILTIN_ID_GENERATOR,
+         ECMA_OBJECT_TYPE_GENERAL,
+         ECMA_BUILTIN_ID_FUNCTION_PROTOTYPE,
+         true,
+         generator)
+
+/* The %(Generator).prototype% object */
+BUILTIN (ECMA_BUILTIN_ID_GENERATOR_PROTOTYPE,
+         ECMA_OBJECT_TYPE_GENERAL,
+         ECMA_BUILTIN_ID_ITERATOR_PROTOTYPE,
+         true,
+         generator_prototype)
+
 #if ENABLED (JERRY_ES2015_BUILTIN_SET)
 /* The %SetIteratorPrototype% object (ECMA-262 v6, 23.2.5.2) */
 BUILTIN (ECMA_BUILTIN_ID_SET_ITERATOR_PROTOTYPE,
@@ -528,7 +596,7 @@ BUILTIN (ECMA_BUILTIN_ID_MAP_ITERATOR_PROTOTYPE,
          true,
          map_iterator_prototype)
 #endif /* ENABLED (JERRY_ES2015_BUILTIN_SET) */
-#endif /* ENABLED (JERRY_ES2015_BUILTIN_ITERATOR) */
+#endif /* ENABLED (JERRY_ES2015) */
 
 #if ENABLED (JERRY_ES2015_BUILTIN_DATAVIEW)
 /* The DataView prototype object (ECMA-262 v6, 24.2.3.1) */
